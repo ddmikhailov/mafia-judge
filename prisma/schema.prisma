@@ -1,0 +1,123 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TournamentFormat {
+  MINICUP
+}
+
+enum TournamentStatus {
+  DRAFT
+  ACTIVE
+  FINISHED
+}
+
+enum RoundStatus {
+  PENDING
+  SEATING_READY
+  IN_PROGRESS
+  SCORING
+  COMPLETED
+}
+
+enum GameStatus {
+  PENDING
+}
+
+enum SeatingStatus {
+  PENDING
+  GENERATED
+  CONFIRMED
+}
+
+model Organization {
+  id          String       @id @default(uuid())
+  name        String
+  tournaments Tournament[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Tournament {
+  id                   String           @id @default(uuid())
+  organizationId       String
+  organization         Organization     @relation(fields: [organizationId], references: [id])
+  name                 String
+  format               TournamentFormat @default(MINICUP)
+  status               TournamentStatus @default(DRAFT)
+  roundCount           Int              @default(5)
+  compensationDistance Int              @default(5)
+  players              TournamentPlayer[]
+  rounds               Round[]
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  @@index([organizationId])
+}
+
+model Player {
+  id                String             @id @default(uuid())
+  nickname          String
+  tournamentEntries TournamentPlayer[]
+  seats             GameSeat[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+}
+
+model TournamentPlayer {
+  id                 String     @id @default(uuid())
+  tournamentId       String
+  playerId           String
+  nicknameNormalized String
+  registrationOrder  Int
+  tournament         Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  player             Player     @relation(fields: [playerId], references: [id])
+  createdAt          DateTime   @default(now())
+
+  @@unique([tournamentId, playerId])
+  @@unique([tournamentId, nicknameNormalized])
+  @@unique([tournamentId, registrationOrder])
+}
+
+model Round {
+  id           String      @id @default(uuid())
+  tournamentId String
+  tournament   Tournament  @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  number       Int
+  status       RoundStatus @default(PENDING)
+  game         Game?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@unique([tournamentId, number])
+}
+
+model Game {
+  id            String        @id @default(uuid())
+  roundId       String        @unique
+  round         Round         @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  status        GameStatus    @default(PENDING)
+  seatingStatus SeatingStatus @default(PENDING)
+  seats         GameSeat[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+model GameSeat {
+  id         String   @id @default(uuid())
+  gameId     String
+  playerId   String
+  seatNumber Int
+  game       Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  player     Player   @relation(fields: [playerId], references: [id])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([gameId, playerId])
+  @@unique([gameId, seatNumber])
+}
