@@ -19,7 +19,7 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 
 .page {
   width: min(100%, 720px);
@@ -99,7 +99,59 @@ h2 { margin: 0; font-size: 20px; }
 .seat-number { color: var(--muted); font-weight: 800; }
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
+.game-page { padding-top: 10px; }
+.game-header { position: sticky; top: 0; z-index: 5; margin: 0 -8px; padding: 10px 8px 12px; background: color-mix(in srgb, var(--background) 94%, transparent); backdrop-filter: blur(8px); }
+.game-topline { display: flex; align-items: center; justify-content: space-between; min-height: 32px; font-size: 13px; }
+.game-topline a { color: var(--muted); text-decoration: none; }
+.connection { color: #166534; font-size: 12px; font-weight: 800; }
+.connection.offline { color: var(--accent); }
+.game-context { display: flex; align-items: stretch; justify-content: space-between; gap: 10px; }
+.game-context > div { display: grid; gap: 2px; }
+.game-context span, .game-context small { color: var(--muted); font-size: 12px; }
+.game-context strong { font-size: 22px; }
+.speaker { min-width: 92px; padding: 7px 10px; border-radius: 10px; background: #fff; text-align: right; }
+.speaker b { font-size: 20px; }
+.timer { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+.timer > strong { font-size: 34px; font-variant-numeric: tabular-nums; }
+.timer.warning > strong { color: #b45309; }
+.timer.expired > strong { color: var(--accent); }
+.timer-actions { display: flex; gap: 7px; }
+.timer-actions button, .inline-form button, .stack-form button, .role-row button { min-height: 44px; padding: 8px 12px; border: 0; border-radius: 9px; background: #252525; color: #fff; font-weight: 700; }
+.judge-seats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.judge-seat { padding: 10px; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+.judge-seat.current { border: 2px solid var(--accent); }
+.judge-seat.eliminated { opacity: .55; background: #e7e7e2; }
+.seat-title { display: grid; grid-template-columns: auto 1fr; gap: 2px 7px; align-items: center; }
+.seat-title b { grid-row: span 2; font-size: 22px; }
+.seat-title span { overflow: hidden; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.seat-title em { color: var(--muted); font-size: 11px; font-style: normal; text-transform: uppercase; }
+.seat-meta { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 8px; font-size: 12px; }
+.seat-meta summary { cursor: pointer; color: var(--muted); }
+.quick-button, .undo-button { min-height: 44px; width: 100%; margin-top: 8px; border: 1px solid #fecaca; border-radius: 9px; background: #fff1f2; color: #991b1b; font-weight: 800; }
+.undo-button { border-color: var(--border); background: #fff; color: var(--text); }
+.winner-banner { margin-top: 10px; padding: 14px; border: 2px solid var(--accent); border-radius: 14px; background: #fff; }
+.winner-banner > b { font-size: 18px; }
+.phase-card { margin-top: 10px; }
+.inline-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 10px; }
+.inline-form select, .stack-form select, .stack-form input, .role-row select, .vote-grid input, .triple-grid select { min-height: 44px; min-width: 0; padding: 8px; border: 1px solid #bdbdb5; border-radius: 9px; background: #fff; }
+.nomination-list { margin-top: 10px; padding: 9px; border-radius: 9px; background: #f2f2ed; }
+.vote-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.vote-grid label { display: grid; gap: 5px; font-weight: 800; }
+.triple-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+.check-result { margin-top: 10px; padding: 10px; border-radius: 9px; background: #181818; color: #fff; }
+.tools summary { min-height: 44px; cursor: pointer; font-weight: 800; }
+.tools h3 { margin: 18px 0 8px; }
+.stack-form { display: grid; gap: 8px; }
+.audit-list { display: grid; gap: 7px; padding-left: 20px; }
+.audit-list li { display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; font-size: 12px; }
+.audit-list time { color: var(--muted); }
+.audit-list small { grid-column: 1 / -1; }
+.role-list { display: grid; gap: 8px; }
+.role-row { display: grid; grid-template-columns: 1fr 110px auto; align-items: center; gap: 7px; padding: 9px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+
 @media (max-width: 420px) {
   .players-grid, .player-list, .actions { grid-template-columns: 1fr; }
   .actions .button { margin-top: 10px; }
+  .role-row { grid-template-columns: 1fr 105px; }
+  .role-row button { grid-column: 1 / -1; }
 }

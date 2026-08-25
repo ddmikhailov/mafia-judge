@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { confirmSeatingAction, regenerateSeatingAction } from "@/app/actions";
 import { prisma } from "@/lib/prisma";
 
@@ -84,6 +85,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
                     ) : null}
                   </div>
                 ) : null}
+                {confirmed && game ? <Link className="button" href={`/games/${game.id}`}>Открыть игру</Link> : null}
               </li>
             );
           })}

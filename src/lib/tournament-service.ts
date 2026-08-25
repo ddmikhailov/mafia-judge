@@ -65,7 +65,18 @@ export async function confirmSeating(roundId: string) {
     if (!game) throw new Error("Тур не найден");
     assertSeatingCanBeConfirmed(game.seatingStatus, game.seats);
 
-    await tx.game.update({ where: { id: game.id }, data: { seatingStatus: "CONFIRMED" } });
+    await tx.gameSeat.updateMany({
+      where: { gameId: game.id },
+      data: { role: "CIVILIAN", team: "RED" },
+    });
+    await tx.game.update({
+      where: { id: game.id },
+      data: {
+        seatingStatus: "CONFIRMED",
+        phase: "ROLE_ASSIGNMENT",
+        subphase: "ROLE_ASSIGNMENT",
+      },
+    });
     await tx.tournament.update({
       where: { id: game.round.tournamentId },
       data: { status: "ACTIVE" },
