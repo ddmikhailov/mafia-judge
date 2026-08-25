@@ -55,6 +55,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --chown=nextjs:nodejs package.json package-lock.json prisma.config.ts ./
 COPY --chown=nextjs:nodejs prisma ./prisma
+COPY --chown=nextjs:nodejs scripts ./scripts
+COPY --from=builder --chown=nextjs:nodejs /app/generated ./generated
 USER nextjs
 EXPOSE 3000
 CMD ["sh", "-c", "npx prisma migrate deploy && exec node server.js"]

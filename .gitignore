@@ -10,3 +10,4 @@ backups/
 postgres-data/
 *.log
 *.tsbuildinfo
+*.cookie

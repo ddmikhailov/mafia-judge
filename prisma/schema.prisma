@@ -11,6 +11,12 @@ enum TournamentFormat {
   MINICUP
 }
 
+enum UserRole {
+  SUPER_ADMIN
+  HEAD_JUDGE
+  JUDGE
+}
+
 enum TournamentStatus {
   DRAFT
   ACTIVE
@@ -143,8 +149,43 @@ model Organization {
   id          String       @id @default(uuid())
   name        String
   tournaments Tournament[]
+  users       User[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+}
+
+model User {
+  id                    String            @id @default(uuid())
+  organizationId        String
+  organization          Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  login                 String            @unique
+  displayName           String
+  passwordHash          String
+  role                  UserRole
+  isActive              Boolean           @default(true)
+  sessions              Session[]
+  tournamentAssignments TournamentJudge[]
+  gameEvents            GameEvent[]       @relation("GameEventActor")
+  tournamentEvents      TournamentEvent[] @relation("TournamentEventActor")
+  archivedTournaments   Tournament[]      @relation("TournamentArchivedBy")
+  actionRequests        ActionRequest[]
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  @@index([organizationId, role, isActive])
+}
+
+model Session {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId, expiresAt])
 }
 
 model Tournament {
@@ -158,14 +199,30 @@ model Tournament {
   compensationDistance Int                     @default(5)
   scoringStatus        TournamentScoringStatus @default(ACTIVE)
   finalizedAt          DateTime?
+  archivedAt           DateTime?
+  archivedByUserId     String?
+  archivedBy           User?                   @relation("TournamentArchivedBy", fields: [archivedByUserId], references: [id], onDelete: Restrict)
   players              TournamentPlayer[]
   rounds               Round[]
   scores               TournamentScore[]
   events               TournamentEvent[]
+  judges               TournamentJudge[]
   createdAt            DateTime                @default(now())
   updatedAt            DateTime                @updatedAt
 
   @@index([organizationId])
+  @@index([archivedAt])
+}
+
+model TournamentJudge {
+  tournamentId String
+  userId       String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  assignedAt   DateTime   @default(now())
+
+  @@id([tournamentId, userId])
+  @@index([userId, assignedAt])
 }
 
 model Player {
@@ -227,6 +284,7 @@ model Game {
   pendingWinner         GameWinner?
   startedAt             DateTime?
   finishedAt            DateTime?
+  version               Int           @default(0)
   seats                 GameSeat[]
   nominations           Nomination[]
   voteSessions          VoteSession[]
@@ -353,10 +411,13 @@ model GameEvent {
   type           String
   payload        Json
   overrideReason String?
+  actorUserId    String?
   game           Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  actor          User?    @relation("GameEventActor", fields: [actorUserId], references: [id], onDelete: Restrict)
   createdAt      DateTime @default(now())
 
   @@index([gameId, createdAt])
+  @@index([actorUserId, createdAt])
 }
 
 model GameScore {
@@ -418,8 +479,25 @@ model TournamentEvent {
   type           String
   payload        Json
   overrideReason String?
+  actorUserId    String?
   tournament     Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  actor          User?      @relation("TournamentEventActor", fields: [actorUserId], references: [id], onDelete: Restrict)
   createdAt      DateTime   @default(now())
 
   @@index([tournamentId, createdAt])
+  @@index([actorUserId, createdAt])
+}
+
+model ActionRequest {
+  id          String   @id @default(uuid())
+  token       String   @unique
+  actorUserId String
+  scopeType   String
+  scopeId     String
+  actionType  String
+  actor       User     @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  createdAt   DateTime @default(now())
+
+  @@index([scopeId, createdAt])
+  @@index([actorUserId, createdAt])
 }

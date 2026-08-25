@@ -12,7 +12,7 @@ export function CreateTournamentForm() {
     <form action={action} className="card">
       <div className="field">
         <label htmlFor="name">Название миникапа</label>
-        <input id="name" name="name" placeholder="Например, Кубок клуба" required />
+        <input id="name" name="name" placeholder="Например, Кубок клуба" maxLength={120} required />
       </div>
       <div className="players-grid">
         {Array.from({ length: 10 }, (_, index) => (
@@ -24,6 +24,7 @@ export function CreateTournamentForm() {
               placeholder="Ник"
               required
               autoComplete="off"
+              maxLength={60}
             />
           </div>
         ))}

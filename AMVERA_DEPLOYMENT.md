@@ -38,6 +38,21 @@ Add in the application project:
 
 Restart or rebuild the application after changing variables. On every container start the image executes `prisma migrate deploy`; a failed migration prevents the application from starting and never resets the database.
 
+## Первый SUPER_ADMIN
+
+После применения security migration один раз выполнить внутри application container:
+
+```bash
+ADMIN_LOGIN=admin \
+ADMIN_DISPLAY_NAME='Главный администратор' \
+ADMIN_PASSWORD='<unique-strong-password>' \
+npm run admin:create
+```
+
+Значения передавать только на время команды. `ADMIN_PASSWORD` не добавлять в постоянные переменные Amvera, Git или логи. Команда отказывает при повторном логине, хранит только bcrypt-хеш и не печатает пароль. После входа SUPER_ADMIN создаёт HEAD_JUDGE/JUDGE в `/admin/users` и назначает их на турниры.
+
+Если Amvera UI не предоставляет terminal/exec, временно открыть SSL-домен PostgreSQL, запустить эту команду локально с `DATABASE_URL` на SSL endpoint, затем немедленно удалить локальную переменную и отключить внешний DB endpoint.
+
 ## Health and smoke
 
 ```bash

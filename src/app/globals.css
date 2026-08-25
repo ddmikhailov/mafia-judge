@@ -177,3 +177,46 @@ h2 { margin: 0; font-size: 20px; }
   .page { padding-bottom: calc(48px + env(safe-area-inset-bottom)); }
   .score-card dl { grid-template-columns: repeat(2, 1fr); }
 }
+
+.app-header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 6px max(12px, calc((100vw - 760px) / 2)); border-bottom: 1px solid var(--border); background: rgba(250,250,247,.96); backdrop-filter: blur(8px); font-size: 13px; }
+.app-header a { color: var(--text); text-decoration: none; font-weight: 700; }
+.app-header nav { display: flex; gap: 10px; margin-right: auto; }
+.app-brand { color: var(--accent) !important; font-size: 16px; }
+.session-user { display: flex; align-items: center; gap: 8px; text-align: right; }
+.session-user span { display: grid; }
+.session-user small { color: var(--muted); font-size: 10px; }
+.link-button { min-height: 36px; border: 0; background: none; color: var(--accent); font-weight: 700; }
+.login-page { max-width: 440px; }
+.login-card { display: grid; gap: 8px; }
+.dashboard-section { margin-top: 24px; }
+.tournament-grid, .user-list { display: grid; gap: 12px; }
+.tournament-card { display: grid; gap: 12px; }
+.tournament-card h3 { margin: 8px 0 2px; }
+.tournament-card p, .tournament-card small { color: var(--muted); }
+.archive-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.archive-form input { min-width: 0; padding: 8px; border: 1px solid var(--border); border-radius: 9px; }
+.archive-form .button { width: auto; margin: 0; }
+.new-tournament > summary { min-height: 44px; font-weight: 800; cursor: pointer; }
+.new-tournament .card { margin: 12px 0 0; box-shadow: none; }
+.assigned-judges { margin: 3px 0 10px; color: var(--muted); font-size: 12px; }
+.assignment-list { display: grid; gap: 8px; margin-top: 10px; }
+.assignment-list form { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; }
+.assignment-list .button { width: auto; margin: 0; }
+.command-fieldset { display: contents; min-width: 0; margin: 0; padding: 0; border: 0; }
+.saving-state { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.audit-list pre { max-width: 100%; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.audit-list details { grid-column: 1 / -1; }
+.user-list article { display: grid; gap: 10px; }
+.user-list article > div { display: grid; }
+.user-list small { color: var(--muted); }
+
+@media (min-width: 640px) {
+  .tournament-grid { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 520px) {
+  .app-header { gap: 7px; padding-inline: 8px; }
+  .app-header nav { gap: 7px; }
+  .session-user span { display: none; }
+  .archive-form { grid-template-columns: 1fr; }
+}

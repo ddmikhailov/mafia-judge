@@ -41,12 +41,15 @@ Environment boundary:
 - PostgreSQL initialization: `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`;
 - Caddy runtime: `DOMAIN`.
 
+`ADMIN_LOGIN`, `ADMIN_DISPLAY_NAME` и `ADMIN_PASSWORD` нужны только для одноразового bootstrap и не должны постоянно храниться в `.env.production`.
+
 После первого создания volume простое изменение `POSTGRES_PASSWORD` в файле не меняет пароль существующей роли PostgreSQL; ротацию выполнять отдельно и синхронно обновлять `DATABASE_URL`.
 
 ```bash
 $COMPOSE build
 $COMPOSE up -d db
 $COMPOSE run --rm migrate
+$COMPOSE --profile tools run --rm --build admin
 $COMPOSE up -d --no-deps app
 $COMPOSE up -d caddy
 $COMPOSE ps
@@ -54,6 +57,10 @@ curl --fail --silent --show-error https://$DOMAIN/api/health
 ```
 
 Ожидается `{"status":"ok","database":"ok"}`. Caddy выпустит и будет обновлять TLS-сертификат автоматически. DNS должен уже указывать на VPS.
+
+Перед bootstrap передать уникальные значения через текущую shell-сессию (`read -s ADMIN_PASSWORD; export ADMIN_PASSWORD`) и после создания выполнить `unset ADMIN_PASSWORD`. Команда хеширует пароль bcrypt, отказывает при повторном логине и не выводит пароль. После первого входа создать рабочие учётные записи в `/admin/users`; общие аккаунты не использовать.
+
+Сессии серверные, действуют 7 дней, хранят только SHA-256 хеш случайного токена. Cookie имеет `HttpOnly`, `SameSite=Lax`, `Secure` в production. Деактивация пользователя и сброс пароля отзывают все его активные сессии.
 
 ## Повторный deploy
 
@@ -191,3 +198,6 @@ du -sh backups
 - containers не privileged, app работает от непривилегированного пользователя;
 - health response не содержит credentials;
 - backup directory имеет права `700` и не доступен reverse proxy.
+- все страницы, кроме `/login`, PWA assets и `/api/health`, требуют входа; доступ судьи к турнирам задаётся назначениями;
+- SUPER_ADMIN управляет пользователями, HEAD_JUDGE назначает судей и выполняет утверждения/ручные решения;
+- универсального или hardcoded-пароля нет.

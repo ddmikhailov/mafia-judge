@@ -1,13 +1,14 @@
 import { randomInt } from "node:crypto";
 import { z } from "zod";
+import { NICKNAME_MAX, TOURNAMENT_NAME_MAX } from "./input-limits";
 
 export const PLAYER_COUNT = 10;
 export const ROUND_COUNT = 5;
 
 const tournamentSchema = z.object({
-  name: z.string().trim().min(1, "Введите название миникапа"),
+  name: z.string().trim().min(1, "Введите название миникапа").max(TOURNAMENT_NAME_MAX, `Название не может быть длиннее ${TOURNAMENT_NAME_MAX} символов`),
   nicknames: z
-    .array(z.string().trim().min(1, "Ник не может быть пустым"))
+    .array(z.string().trim().min(1, "Ник не может быть пустым").max(NICKNAME_MAX, `Ник не может быть длиннее ${NICKNAME_MAX} символов`))
     .length(PLAYER_COUNT, `Нужно ровно ${PLAYER_COUNT} игроков`),
 });
 

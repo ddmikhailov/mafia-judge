@@ -3,23 +3,42 @@ import { Prisma } from "../../generated/prisma/client";
 import { basePoints, scoreStringFromUnits, scoreUnits, sumPenaltyPoints, totalWithoutCompensation, validateJudgeAdditional } from "./scoring-rules";
 import { compensationBase, compensationForGame, type CompensationGame } from "./compensation-rules";
 import { maxNetJudgeAdditionalPerGame, rankTournament, type RankingEntry } from "./tournament-ranking";
+import { boundedReason, parseFiniteDecimal } from "./input-limits";
 
 type Tx = Prisma.TransactionClient;
 
 const scoringGameInclude = {
-  round: { include: { tournament: true } },
+  round: { include: { tournament: { include: { judges: { include: { user: { select: { id: true, displayName: true, role: true } } } } } } } },
   seats: { include: { player: true, penalties: true, score: true }, orderBy: { seatNumber: "asc" as const } },
   blackTriple: true,
   scores: true,
   events: { orderBy: { createdAt: "desc" as const }, take: 30 },
 } satisfies Prisma.GameInclude;
 
-async function gameAudit(tx: Tx, gameId: string, type: string, payload: Prisma.InputJsonValue, reason?: string) {
-  await tx.gameEvent.create({ data: { gameId, type, payload, overrideReason: reason } });
+async function gameAudit(tx: Tx, gameId: string, type: string, payload: Prisma.InputJsonValue, reason?: string, actorUserId?: string) {
+  await tx.gameEvent.create({ data: { gameId, type, payload, overrideReason: reason, actorUserId } });
 }
 
-async function tournamentAudit(tx: Tx, tournamentId: string, type: string, payload: Prisma.InputJsonValue, reason?: string) {
-  await tx.tournamentEvent.create({ data: { tournamentId, type, payload, overrideReason: reason } });
+async function tournamentAudit(tx: Tx, tournamentId: string, type: string, payload: Prisma.InputJsonValue, reason?: string, actorUserId?: string) {
+  await tx.tournamentEvent.create({ data: { tournamentId, type, payload, overrideReason: reason, actorUserId } });
+}
+
+type MutationContext = { actorUserId?: string; actionToken?: string };
+
+async function lockScope(tx: Tx, scopeId: string) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${scopeId}, 0))`;
+}
+
+async function consumeActionToken(tx: Tx, scopeType: string, scopeId: string, actionType: string, context: MutationContext) {
+  if (!context.actionToken) return false;
+  if (!context.actorUserId) throw new Error("Для идемпотентного действия требуется actor");
+  const previous = await tx.actionRequest.findUnique({ where: { token: context.actionToken } });
+  if (previous) {
+    if (previous.actorUserId !== context.actorUserId || previous.scopeId !== scopeId || previous.actionType !== actionType) throw new Error("Недопустимое повторное использование токена действия");
+    return true;
+  }
+  await tx.actionRequest.create({ data: { token: context.actionToken, actorUserId: context.actorUserId, scopeType, scopeId, actionType } });
+  return false;
 }
 
 async function loadScoringGame(tx: Tx, gameId: string) {
@@ -110,23 +129,28 @@ async function validateAndSaveDraft(tx: Tx, gameId: string, inputs: readonly Gam
   return game;
 }
 
-export async function saveGameScoring(gameId: string, inputs: readonly GameScoringInput[], headJudgeApproved: boolean) {
+export async function saveGameScoring(gameId: string, inputs: readonly GameScoringInput[], headJudgeApproved: boolean, context: MutationContext = {}) {
   return prisma.$transaction(async (tx) => {
+    await lockScope(tx, gameId);
     const game = await validateAndSaveDraft(tx, gameId, inputs, headJudgeApproved);
     if (headJudgeApproved && !game.scores.some((score) => score.headJudgeApproved)) {
-      await gameAudit(tx, gameId, "HEAD_JUDGE_APPROVAL", { approved: true });
+      await gameAudit(tx, gameId, "HEAD_JUDGE_APPROVAL", { approved: true }, undefined, context.actorUserId);
     }
-    await gameAudit(tx, gameId, "SCORING_SAVED", { headJudgeApproved, scores: inputs } as Prisma.InputJsonValue);
+    await gameAudit(tx, gameId, "SCORING_SAVED", { headJudgeApproved, scores: inputs } as Prisma.InputJsonValue, undefined, context.actorUserId);
   });
 }
 
-export async function closeGameScoring(gameId: string, inputs: readonly GameScoringInput[], headJudgeApproved: boolean) {
+export async function closeGameScoring(gameId: string, inputs: readonly GameScoringInput[], headJudgeApproved: boolean, context: MutationContext = {}) {
   return prisma.$transaction(async (tx) => {
+    await lockScope(tx, gameId);
+    if (await consumeActionToken(tx, "GAME", gameId, "CLOSE_SCORING", context)) return { duplicate: true };
+    const current = await tx.game.findUnique({ where: { id: gameId }, select: { status: true } });
+    if (current?.status === "COMPLETED") return { duplicate: true };
     const game = await validateAndSaveDraft(tx, gameId, inputs, headJudgeApproved);
     if (headJudgeApproved && !game.scores.some((score) => score.headJudgeApproved)) {
-      await gameAudit(tx, gameId, "HEAD_JUDGE_APPROVAL", { approved: true });
+      await gameAudit(tx, gameId, "HEAD_JUDGE_APPROVAL", { approved: true }, undefined, context.actorUserId);
     }
-    await gameAudit(tx, gameId, "SCORING_SAVED", { headJudgeApproved, scores: inputs, closing: true } as Prisma.InputJsonValue);
+    await gameAudit(tx, gameId, "SCORING_SAVED", { headJudgeApproved, scores: inputs, closing: true } as Prisma.InputJsonValue, undefined, context.actorUserId);
     const scores = await tx.gameScore.findMany({ where: { gameId } });
     if (scores.length !== 10) throw new Error("Scoring должен содержать 10 игроков");
     await tx.gameScore.updateMany({ where: { gameId }, data: { isLocked: true } });
@@ -137,8 +161,9 @@ export async function closeGameScoring(gameId: string, inputs: readonly GameScor
       where: { id: game.round.tournamentId },
       data: { scoringStatus: completed === 5 ? "READY_TO_FINALIZE" : "ACTIVE" },
     });
-    await gameAudit(tx, gameId, "GAME_SCORE_LOCKED", { scoreCount: scores.length });
-    await gameAudit(tx, gameId, "ROUND_COMPLETED", { roundNumber: game.round.number });
+    await gameAudit(tx, gameId, "GAME_SCORE_LOCKED", { scoreCount: scores.length }, undefined, context.actorUserId);
+    await gameAudit(tx, gameId, "ROUND_COMPLETED", { roundNumber: game.round.number }, undefined, context.actorUserId);
+    return { duplicate: false };
   });
 }
 
@@ -149,10 +174,14 @@ export async function overrideGameScore(input: {
   penaltyValue?: string;
   manualCompensationPoints?: string;
   reason: string;
-}) {
+}, context: MutationContext = {}) {
   return prisma.$transaction(async (tx) => {
-    const reason = input.reason.trim();
-    if (!reason) throw new Error("Укажите причину корректировки");
+    await lockScope(tx, input.gameId);
+    if (await consumeActionToken(tx, "GAME", input.gameId, "SCORE_OVERRIDE", context)) return { duplicate: true };
+    const reason = boundedReason.parse(input.reason);
+    input.judgeAdditionalPoints = parseFiniteDecimal(input.judgeAdditionalPoints, { maxAbs: 4 });
+    if (input.penaltyValue) input.penaltyValue = parseFiniteDecimal(input.penaltyValue, { nonPositive: true });
+    if (input.manualCompensationPoints) input.manualCompensationPoints = parseFiniteDecimal(input.manualCompensationPoints, { maxAbs: 10 });
     const game = await loadScoringGame(tx, input.gameId);
     if (game.status !== "COMPLETED") throw new Error("Ручная корректировка доступна после закрытия игры");
     const target = game.seats.find((seat) => seat.id === input.gameSeatId);
@@ -186,8 +215,10 @@ export async function overrideGameScore(input: {
       gameSeatId: target.id,
       old: { judgeAdditionalPoints: target.score.judgeAdditionalPoints.toString(), penaltyPoints: target.score.penaltyPoints.toString(), manualCompensationPoints: target.score.manualCompensationPoints?.toString() ?? null },
       new: { judgeAdditionalPoints: input.judgeAdditionalPoints, penaltyPoints: penalty, manualCompensationPoints: input.manualCompensationPoints ?? target.score.manualCompensationPoints?.toString() ?? null },
-    }, reason);
+    }, reason, context.actorUserId);
     await tx.tournament.update({ where: { id: game.round.tournamentId }, data: { scoringStatus: "NEEDS_RECALCULATION", finalizedAt: null, status: "ACTIVE" } });
+    await tournamentAudit(tx, game.round.tournamentId, "TOURNAMENT_FINALIZATION_INVALIDATED", { gameId: game.id, gameSeatId: target.id }, reason, context.actorUserId);
+    return { duplicate: false };
   });
 }
 
@@ -230,18 +261,23 @@ export async function getTournamentResults(tournamentId: string) {
     where: { id: tournamentId },
     include: {
       ...finalizationInclude,
+      judges: { include: { user: { select: { id: true, displayName: true, role: true, isActive: true } } }, orderBy: { assignedAt: "asc" } },
       events: { orderBy: { createdAt: "desc" }, take: 30 },
     },
   });
 }
 
-export async function finalizeTournament(tournamentId: string) {
+export async function finalizeTournament(tournamentId: string, context: MutationContext = {}) {
   return prisma.$transaction(async (tx) => {
+    await lockScope(tx, tournamentId);
+    if (await consumeActionToken(tx, "TOURNAMENT", tournamentId, "FINALIZE_TOURNAMENT", context)) return { status: "DUPLICATE" as const };
     const tournament = await loadTournamentForFinalization(tx, tournamentId);
     if (!tournament) throw new Error("Турнир не найден");
-    await tournamentAudit(tx, tournamentId, "TOURNAMENT_FINALIZATION_STARTED", {});
+    if (tournament.status === "FINISHED" && tournament.scoringStatus === "FINALIZED") return { status: "FINALIZED" as const };
+    if (tournament.archivedAt) throw new Error("Архивный турнир нельзя финализировать");
+    await tournamentAudit(tx, tournamentId, "TOURNAMENT_FINALIZATION_STARTED", {}, undefined, context.actorUserId);
     if (tournament.players.length !== 10 || tournament.rounds.length !== 5 || tournament.rounds.some((round) => round.status !== "COMPLETED" || round.game?.status !== "COMPLETED" || round.game.scores.length !== 10)) {
-      await tournamentAudit(tx, tournamentId, "TOURNAMENT_FINALIZATION_BLOCKED", { reason: "INCOMPLETE_GAMES" });
+      await tournamentAudit(tx, tournamentId, "TOURNAMENT_FINALIZATION_BLOCKED", { reason: "INCOMPLETE_GAMES" }, undefined, context.actorUserId);
       return { status: "INCOMPLETE_GAMES" as const };
     }
 
@@ -273,7 +309,7 @@ export async function finalizeTournament(tournamentId: string) {
 
     if (unresolved.length) {
       await tx.tournament.update({ where: { id: tournamentId }, data: { scoringStatus: "REQUIRES_MANUAL_DECISION", finalizedAt: null } });
-      await tournamentAudit(tx, tournamentId, "TOURNAMENT_FINALIZATION_BLOCKED", { reason: "DRAW_COMPENSATION", unresolved } as Prisma.InputJsonValue);
+      await tournamentAudit(tx, tournamentId, "TOURNAMENT_FINALIZATION_BLOCKED", { reason: "DRAW_COMPENSATION", unresolved } as Prisma.InputJsonValue, undefined, context.actorUserId);
       return { status: "REQUIRES_MANUAL_DECISION" as const, unresolved };
     }
 
@@ -285,7 +321,7 @@ export async function finalizeTournament(tournamentId: string) {
     }
     await tournamentAudit(tx, tournamentId, "COMPENSATION_CALCULATED", {
       players: [...calculatedByPlayer].map(([playerId, value]) => ({ playerId, i: value.i, compensation: scoreStringFromUnits(value.games.reduce((sum, game) => sum + scoreUnits(game.points), 0)) })),
-    } as Prisma.InputJsonValue);
+    } as Prisma.InputJsonValue, undefined, context.actorUserId);
 
     const rankingEntries: RankingEntry[] = [];
     for (const entry of tournament.players) {
@@ -325,7 +361,7 @@ export async function finalizeTournament(tournamentId: string) {
     if (ranking.status === "REQUIRES_DRAW_LOT") {
       await tx.tournamentScore.updateMany({ where: { tournamentId }, data: { rankingStatus: "REQUIRES_DRAW_LOT", finalRank: null } });
       await tx.tournament.update({ where: { id: tournamentId }, data: { scoringStatus: "REQUIRES_DRAW_LOT", finalizedAt: null } });
-      await tournamentAudit(tx, tournamentId, "TOURNAMENT_FINALIZATION_BLOCKED", { reason: "DRAW_LOT", groups: ranking.unresolvedGroups });
+      await tournamentAudit(tx, tournamentId, "TOURNAMENT_FINALIZATION_BLOCKED", { reason: "DRAW_LOT", groups: ranking.unresolvedGroups }, undefined, context.actorUserId);
       return { status: "REQUIRES_DRAW_LOT" as const, groups: ranking.unresolvedGroups };
     }
 
@@ -333,27 +369,32 @@ export async function finalizeTournament(tournamentId: string) {
       await tx.tournamentScore.update({ where: { tournamentId_playerId: { tournamentId, playerId: ranked.playerId } }, data: { finalRank: ranked.finalRank, rankingStatus: "FINAL" } });
     }
     await tx.tournament.update({ where: { id: tournamentId }, data: { scoringStatus: "FINALIZED", finalizedAt: new Date(), status: "FINISHED" } });
-    await tournamentAudit(tx, tournamentId, "TOURNAMENT_FINALIZED", { ranks: ranking.ordered.map((item) => ({ playerId: item.playerId, rank: item.finalRank })) });
+    await tournamentAudit(tx, tournamentId, "TOURNAMENT_FINALIZED", { ranks: ranking.ordered.map((item) => ({ playerId: item.playerId, rank: item.finalRank })) }, undefined, context.actorUserId);
     return { status: "FINALIZED" as const };
   });
 }
 
-export async function overrideDrawCompensation(input: { tournamentId: string; gameSeatId: string; value: string; reason: string }) {
+export async function overrideDrawCompensation(input: { tournamentId: string; gameSeatId: string; value: string; reason: string }, context: MutationContext = {}) {
   return prisma.$transaction(async (tx) => {
-    if (!input.reason.trim()) throw new Error("Укажите причину решения Главного судьи");
-    scoreUnits(input.value);
-    const score = await tx.gameScore.findUnique({ where: { gameSeatId: input.gameSeatId }, include: { game: { include: { round: true } }, gameSeat: true } });
+    const reason = boundedReason.parse(input.reason);
+    input.value = parseFiniteDecimal(input.value, { maxAbs: 10 });
+    const score = await tx.gameScore.findUnique({ where: { gameSeatId: input.gameSeatId }, include: { game: { include: { round: { include: { tournament: true } }, nightActions: true } }, gameSeat: true } });
     if (!score || score.game.round.tournamentId !== input.tournamentId) throw new Error("Баллы игрока не найдены");
-    const old = score.manualCompensationPoints?.toString() ?? null;
+    const qualifyingShot = score.game.nightActions.some((action) => action.type === "SHOT" && action.nightNumber === 2 && action.result === "KILL" && !action.undoneAt && action.targetSeat === score.gameSeat.seatNumber);
+    const qualifyingRole = score.gameSeat.role === "CIVILIAN" || score.gameSeat.role === "SHERIFF";
+    if (score.game.winner !== "DRAW" || !qualifyingShot || !qualifyingRole || score.game.round.tournament.scoringStatus !== "REQUIRES_MANUAL_DECISION" || score.manualCompensationPoints != null) {
+      throw new Error("Ручной КБ доступен только для неразрешённого qualifying DRAW case");
+    }
+    const old = null;
     await tx.gameScore.update({ where: { id: score.id }, data: { manualCompensationPoints: input.value } });
-    await gameAudit(tx, score.gameId, "COMPENSATION_OVERRIDDEN", { gameSeatId: input.gameSeatId, old, new: input.value }, input.reason.trim());
+    await gameAudit(tx, score.gameId, "COMPENSATION_OVERRIDDEN", { gameSeatId: input.gameSeatId, old, new: input.value }, reason, context.actorUserId);
     await tx.tournament.update({ where: { id: input.tournamentId }, data: { scoringStatus: "READY_TO_FINALIZE" } });
   });
 }
 
-export async function recordDrawLot(input: { tournamentId: string; orderedPlayerIds: string[]; reason: string }) {
+export async function recordDrawLot(input: { tournamentId: string; orderedPlayerIds: string[]; reason: string }, context: MutationContext = {}) {
   return prisma.$transaction(async (tx) => {
-    if (!input.reason.trim()) throw new Error("Укажите подтверждение проведения жребия");
+    const reason = boundedReason.parse(input.reason);
     const scores = await tx.tournamentScore.findMany({ where: { tournamentId: input.tournamentId } });
     const ranking = rankTournament(scores.map((score) => ({ ...score, drawLotOrder: null })));
     const group = ranking.unresolvedGroups.find((items) => items.length === input.orderedPlayerIds.length && items.every((id) => input.orderedPlayerIds.includes(id)));
@@ -361,7 +402,7 @@ export async function recordDrawLot(input: { tournamentId: string; orderedPlayer
     for (let index = 0; index < input.orderedPlayerIds.length; index += 1) {
       await tx.tournamentScore.update({ where: { tournamentId_playerId: { tournamentId: input.tournamentId, playerId: input.orderedPlayerIds[index] } }, data: { drawLotOrder: index + 1 } });
     }
-    await tournamentAudit(tx, input.tournamentId, "DRAW_LOT_RECORDED", { orderedPlayerIds: input.orderedPlayerIds }, input.reason.trim());
+    await tournamentAudit(tx, input.tournamentId, "DRAW_LOT_RECORDED", { orderedPlayerIds: input.orderedPlayerIds }, reason, context.actorUserId);
     await tx.tournament.update({ where: { id: input.tournamentId }, data: { scoringStatus: "READY_TO_FINALIZE" } });
   });
 }

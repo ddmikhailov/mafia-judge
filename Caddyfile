@@ -5,6 +5,10 @@
   header {
     Strict-Transport-Security "max-age=31536000; includeSubDomains"
     X-Content-Type-Options "nosniff"
+    Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    X-Frame-Options "DENY"
+    Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    X-Robots-Tag "noindex, nofollow"
     Referrer-Policy "same-origin"
     -Server
   }

@@ -24,8 +24,11 @@ import {
   nextSpeechSeat,
   startNextDay,
 } from "@/lib/game-state";
+import { assertCommandAllowed, assertPendingWinnerConfirmation, HIGH_RISK_IDEMPOTENT_COMMANDS } from "@/lib/game-command-policy";
+import { assertPhasePair, validateOverride } from "@/lib/manual-override";
 
 type Tx = Prisma.TransactionClient;
+const STALE_UNDO = "Состояние игры изменилось после этого действия. Используйте ручную корректировку.";
 
 export type GameCommand =
   | { type: "ASSIGN_ROLE"; seatNumber: number; role: Role }
@@ -62,7 +65,7 @@ export type GameCommand =
     };
 
 const gameInclude = {
-  round: true,
+  round: { include: { tournament: { include: { judges: { include: { user: { select: { id: true, displayName: true, role: true } } } } } } } },
   seats: { include: { player: true }, orderBy: { seatNumber: "asc" as const } },
   nominations: { orderBy: { order: "asc" as const } },
   voteSessions: { include: { results: true }, orderBy: { sequence: "desc" as const } },
@@ -206,9 +209,10 @@ async function eliminateByVote(tx: Tx, gameId: string, seatNumber: number, dayNu
   await refreshWinner(tx, gameId);
 }
 
-export async function performGameAction(gameId: string, command: GameCommand) {
-  return prisma.$transaction(async (tx) => {
+async function executeGameAction(tx: Tx, gameId: string, command: GameCommand) {
     const game = await loadGame(tx, gameId);
+    assertCommandAllowed(game, command.type);
+    if (command.type === "CONFIRM_WINNER") assertPendingWinnerConfirmation(game, command.winner);
 
     if (command.type === "ASSIGN_ROLE") {
       if (game.status !== "PENDING" || game.phase !== "ROLE_ASSIGNMENT") throw new Error("Роли уже заблокированы");
@@ -304,13 +308,13 @@ export async function performGameAction(gameId: string, command: GameCommand) {
     }
 
     if (command.type === "UNDO_FOUL") {
-      const event = game.events.find((item) => item.type === "FOUL_ADDED");
+      const foulEvents = await tx.gameEvent.findMany({ where: { gameId, type: { in: ["FOUL_ADDED", "FOUL_UNDONE"] } }, orderBy: { createdAt: "desc" } });
+      const undoneIds = new Set(foulEvents.filter((item) => item.type === "FOUL_UNDONE").map((item) => (item.payload as { sourceEventId?: string }).sourceEventId));
+      const event = foulEvents.find((item) => item.type === "FOUL_ADDED" && !undoneIds.has(item.id));
       if (!event) throw new Error("Нет фола для отмены");
       const payload = event.payload as { seatNumber: number; old: number; new: number };
-      if (game.events.some((item) => item.type === "FOUL_UNDONE" && (item.payload as { sourceEventId?: string }).sourceEventId === event.id)) {
-        throw new Error("Этот фол уже отменён");
-      }
       const seat = game.seats.find((item) => item.seatNumber === payload.seatNumber)!;
+      if (!seat || seat.foulCount !== payload.new || (payload.new >= 4 && (seat.status !== "ELIMINATED" || seat.eliminationReason !== "FOURTH_FOUL"))) throw new Error(STALE_UNDO);
       await tx.gameSeat.update({
         where: { id: seat.id },
         data: {
@@ -350,6 +354,8 @@ export async function performGameAction(gameId: string, command: GameCommand) {
     if (command.type === "UNDO_NOMINATION") {
       const nomination = [...game.nominations].reverse().find((item) => item.dayNumber === game.dayNumber && item.status === "ACTIVE");
       if (!nomination) throw new Error("Нет выставления для отмены");
+      const source = await tx.gameEvent.findFirst({ where: { gameId, type: "NOMINATION_ADDED", payload: { path: ["nominationId"], equals: nomination.id } }, orderBy: { createdAt: "desc" } });
+      if (!source) throw new Error(STALE_UNDO);
       await tx.nomination.update({ where: { id: nomination.id }, data: { status: "UNDONE" } });
       await audit(tx, gameId, "NOMINATION_UNDONE", { nominationId: nomination.id, nomineeSeat: nomination.nomineeSeat });
       return;
@@ -398,9 +404,12 @@ export async function performGameAction(gameId: string, command: GameCommand) {
       const session = game.voteSessions.find((item) => item.status === "COMPLETED");
       if (!session) throw new Error("Нет голосования для отмены");
       const event = game.events.find((item) => item.type === "VOTE_RECORDED" && (item.payload as { sessionId?: string }).sessionId === session.id);
-      if (event && game.events.some((item) => item.type === "VOTE_UNDONE" && (item.payload as { sourceEventId?: string }).sourceEventId === event.id)) {
+      const exactEvent = event ?? await tx.gameEvent.findFirst({ where: { gameId, type: "VOTE_RECORDED", payload: { path: ["sessionId"], equals: session.id } }, orderBy: { createdAt: "desc" } });
+      const voteUndoEvents = await tx.gameEvent.findMany({ where: { gameId, type: "VOTE_UNDONE" } });
+      if (exactEvent && voteUndoEvents.some((item) => (item.payload as { sourceEventId?: string }).sourceEventId === exactEvent.id)) {
         throw new Error("Голосование уже отменено");
       }
+      if (!exactEvent || !["CAR_CRASH", "FINAL_SPEECH"].includes(game.phase)) throw new Error(STALE_UNDO);
       const eliminated = game.seats.find((seat) => seat.eliminationReason === "VOTE" && game.pendingExitSeats.includes(seat.seatNumber));
       if (eliminated) await tx.gameSeat.update({ where: { id: eliminated.id }, data: { status: "ACTIVE", eliminationReason: null } });
       await tx.voteSession.update({ where: { id: session.id }, data: { status: "CANCELLED" } });
@@ -423,7 +432,7 @@ export async function performGameAction(gameId: string, command: GameCommand) {
           pendingWinner: null,
         },
       });
-      await audit(tx, gameId, "VOTE_UNDONE", { sourceEventId: event?.id ?? null, oldSessionId: session.id, newSessionId: replacement.id });
+      await audit(tx, gameId, "VOTE_UNDONE", { sourceEventId: exactEvent.id, oldSessionId: session.id, newSessionId: replacement.id });
       return;
     }
 
@@ -546,6 +555,8 @@ export async function performGameAction(gameId: string, command: GameCommand) {
     if (command.type === "UNDO_NIGHT_ACTION") {
       const action = game.nightActions.find((item) => !item.undoneAt);
       if (!action) throw new Error("Нет ночного действия для отмены");
+      const latestAction = await tx.nightAction.findFirst({ where: { gameId, undoneAt: null }, orderBy: { createdAt: "desc" } });
+      if (!latestAction || latestAction.id !== action.id || latestAction.nightNumber !== game.nightNumber) throw new Error(STALE_UNDO);
       if (action.type === "SHOT" && action.result === "KILL" && action.targetSeat !== null) {
         const target = game.seats.find((seat) => seat.seatNumber === action.targetSeat)!;
         await tx.gameSeat.update({ where: { id: target.id }, data: { status: "ACTIVE", eliminationReason: null } });
@@ -620,46 +631,50 @@ export async function performGameAction(gameId: string, command: GameCommand) {
     if (command.type === "UNDO_PENALTY") {
       const penalty = game.penalties.find((item) => !item.undoneAt);
       if (!penalty) throw new Error("Нет штрафа для отмены");
+      const source = await tx.gameEvent.findFirst({ where: { gameId, type: "PENALTY_ADDED", payload: { path: ["penaltyId"], equals: penalty.id } }, orderBy: { createdAt: "desc" } });
+      const laterScoring = source ? await tx.gameEvent.findFirst({ where: { gameId, type: { in: ["SCORING_SAVED", "GAME_SCORE_LOCKED"] }, createdAt: { gt: source.createdAt } } }) : null;
+      if (!source || laterScoring) throw new Error(STALE_UNDO);
       await tx.penalty.update({ where: { id: penalty.id }, data: { undoneAt: new Date() } });
       await audit(tx, gameId, "PENALTY_UNDONE", { penaltyId: penalty.id });
       return;
     }
 
     if (command.type === "MANUAL_OVERRIDE") {
-      const reason = command.reason.trim();
-      if (!reason) throw new Error("Укажите причину ручной корректировки");
-      const seat = command.seatNumber ? game.seats.find((item) => item.seatNumber === command.seatNumber) : undefined;
+      const checked = validateOverride(command);
+      const reason = checked.reason;
+      const seat = checked.seatNumber ? game.seats.find((item) => item.seatNumber === checked.seatNumber) : undefined;
       let oldValue: unknown = null;
-      let newValue: unknown = command.value ?? null;
-      if (command.kind === "FOUL" && seat) {
+      let newValue: unknown = checked.value ?? null;
+      if (checked.kind === "FOUL" && seat) {
         oldValue = seat.foulCount;
-        const value = Number(command.value);
+        const value = Number(checked.value);
         await tx.gameSeat.update({ where: { id: seat.id }, data: { foulCount: value } });
-      } else if (command.kind === "ROLE" && seat && command.value) {
+      } else if (checked.kind === "ROLE" && seat && checked.value) {
         oldValue = seat.role;
-        const role = command.value as Role;
+        const role = checked.value as Role;
         await tx.gameSeat.update({ where: { id: seat.id }, data: { role, team: teamForRole(role) } });
-      } else if (command.kind === "STATUS" && seat && command.value) {
+      } else if (checked.kind === "STATUS" && seat && checked.value) {
         oldValue = seat.status;
-        const status = command.value as "ACTIVE" | "ELIMINATED";
+        const status = checked.value as "ACTIVE" | "ELIMINATED";
         await tx.gameSeat.update({ where: { id: seat.id }, data: { status, eliminationReason: status === "ELIMINATED" ? "MANUAL" : null } });
         await refreshWinner(tx, gameId);
-      } else if (command.kind === "PHASE" && command.value && command.extra) {
+      } else if (checked.kind === "PHASE" && checked.value && checked.extra) {
         oldValue = { phase: game.phase, subphase: game.subphase };
-        newValue = { phase: command.value, subphase: command.extra };
-        await tx.game.update({ where: { id: gameId }, data: { phase: command.value as never, subphase: command.extra as never } });
-      } else if (command.kind === "WINNER" && command.value) {
+        const pair = assertPhasePair(checked.value, checked.extra);
+        newValue = pair;
+        await tx.game.update({ where: { id: gameId }, data: pair });
+      } else if (checked.kind === "WINNER" && checked.value) {
         oldValue = game.pendingWinner;
-        await tx.game.update({ where: { id: gameId }, data: { pendingWinner: command.value as Winner, phase: "RESULT_CONFIRMATION", subphase: "RESULT_CONFIRMATION" } });
-      } else if (command.kind === "CANCEL_VOTE") {
+        await tx.game.update({ where: { id: gameId }, data: { pendingWinner: checked.value as Winner, phase: "RESULT_CONFIRMATION", subphase: "RESULT_CONFIRMATION" } });
+      } else if (checked.kind === "CANCEL_VOTE") {
         const open = game.voteSessions.find((item) => item.status === "OPEN");
         oldValue = open?.id ?? null;
         newValue = "CANCELLED";
         if (open) await tx.voteSession.update({ where: { id: open.id }, data: { status: "CANCELLED" } });
         await goToNight(tx, gameId, game.dayNumber > 1);
-      } else if (command.kind === "PENALTY" && seat) {
-        const value = Number(command.value);
-        await tx.penalty.create({ data: { gameId, gameSeatId: seat.id, value, type: "CUSTOM", comment: command.extra, isOverride: true } });
+      } else if (checked.kind === "PENALTY" && seat) {
+        const value = Number(checked.value);
+        await tx.penalty.create({ data: { gameId, gameSeatId: seat.id, value, type: "CUSTOM", comment: checked.extra, isOverride: true } });
         newValue = value;
       } else {
         throw new Error("Недостаточно данных для корректировки");
@@ -668,12 +683,39 @@ export async function performGameAction(gameId: string, command: GameCommand) {
         tx,
         gameId,
         "MANUAL_OVERRIDE",
-        { kind: command.kind, seatNumber: command.seatNumber ?? null, old: oldValue, new: newValue } as Prisma.InputJsonValue,
+        { kind: checked.kind, seatNumber: checked.seatNumber ?? null, old: oldValue, new: newValue } as Prisma.InputJsonValue,
         reason,
       );
       return;
     }
 
     command satisfies never;
+}
+
+export async function performGameAction(
+  gameId: string,
+  command: GameCommand,
+  context: { actorUserId?: string; actionToken?: string } = {},
+) {
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${gameId}, 0))`;
+    if (context.actionToken && HIGH_RISK_IDEMPOTENT_COMMANDS.has(command.type)) {
+      const previous = await tx.actionRequest.findUnique({ where: { token: context.actionToken } });
+      if (previous) {
+        if (previous.actorUserId !== context.actorUserId || previous.scopeId !== gameId || previous.actionType !== command.type) throw new Error("Недопустимое повторное использование токена действия");
+        return { duplicate: true };
+      }
+      if (!context.actorUserId) throw new Error("Для идемпотентного действия требуется actor");
+      await tx.actionRequest.create({ data: { token: context.actionToken, actorUserId: context.actorUserId, scopeType: "GAME", scopeId: gameId, actionType: command.type } });
+    }
+    const existingEventIds = new Set((await tx.gameEvent.findMany({ where: { gameId }, select: { id: true } })).map((event) => event.id));
+    await executeGameAction(tx, gameId, command);
+    if (context.actorUserId) {
+      const newEvents = await tx.gameEvent.findMany({ where: { gameId, actorUserId: null }, select: { id: true } });
+      const ids = newEvents.filter((event) => !existingEventIds.has(event.id)).map((event) => event.id);
+      if (ids.length) await tx.gameEvent.updateMany({ where: { id: { in: ids } }, data: { actorUserId: context.actorUserId } });
+    }
+    await tx.game.update({ where: { id: gameId }, data: { version: { increment: 1 } } });
+    return { duplicate: false };
   });
 }

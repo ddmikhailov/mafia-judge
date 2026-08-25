@@ -1,12 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { gameCommandAction, gameScoringAction, scoreOverrideAction } from "@/app/actions";
+import { gameScoringAction, scoreOverrideAction } from "@/app/actions";
 import { ConnectionStatus } from "@/components/connection-status";
 import { GameTimer } from "@/components/game-timer";
+import { CommandForm } from "@/components/command-form";
+import { PendingSubmit } from "@/components/pending-submit";
 import { getGameSnapshot } from "@/lib/game-service";
 import { validateRoleComposition } from "@/lib/game-rules";
 import { allowedJudgeAdditional } from "@/lib/scoring-rules";
 import { getGameScoringSnapshot } from "@/lib/scoring-service";
+import { requirePageUser } from "@/lib/auth/session";
+import { canApproveHeadJudge, canDangerousOverride, requireGameAccess } from "@/lib/authorization";
 
 export const dynamic = "force-dynamic";
 
@@ -24,10 +28,6 @@ const subphaseLabels: Record<string, string> = {
   BLACK_TRIPLE: "Тройка чёрных", FINAL_SPEECH: "Заключительная речь", PROTOCOL: "Протокол",
   RESULT_CONFIRMATION: "Результат", SCORING: "Scoring",
 };
-
-function CommandForm({ gameId, intent, children, className }: { gameId: string; intent: string; children: React.ReactNode; className?: string }) {
-  return <form action={gameCommandAction} className={className}><input type="hidden" name="gameId" value={gameId} /><input type="hidden" name="intent" value={intent} />{children}</form>;
-}
 
 function TimerForGame({ game }: { game: NonNullable<Awaited<ReturnType<typeof getGameSnapshot>>> }) {
   let duration: number | null = null;
@@ -48,7 +48,7 @@ function formatScore(value: { toString(): string } | string | number) {
   return Number(value.toString()).toLocaleString("ru-RU", { maximumFractionDigits: 3 });
 }
 
-async function ScoringScreen({ gameId, error }: { gameId: string; error?: string }) {
+async function ScoringScreen({ gameId, error, user }: { gameId: string; error?: string; user: Awaited<ReturnType<typeof requirePageUser>> }) {
   const game = await getGameScoringSnapshot(gameId);
   if (!game?.winner) notFound();
   const locked = game.status === "COMPLETED";
@@ -57,11 +57,13 @@ async function ScoringScreen({ gameId, error }: { gameId: string; error?: string
   return <main className="page game-page">
     <div className="game-topline"><Link href={`/tournaments/${game.round.tournamentId}`}>← Турнир</Link><ConnectionStatus gameId={game.id} snapshot={JSON.stringify({ phase: game.phase, status: game.status, scores: game.scores.map((score) => [score.gameSeatId, score.judgeAdditionalPoints.toString()]) })} /></div>
     <p className="eyebrow">Тур {game.round.number} · {locked ? "закрыт" : "scoring"}</p>
+    <p className="assigned-judges">Судьи: {game.round.tournament.judges.map(({ user: judge }) => judge.displayName).join(", ") || "не назначены"}</p>
     <h1>{locked ? "Баллы игры" : "Выставление баллов"}</h1>
     <p className="lead">Основной балл, ТЧ и штрафы рассчитаны автоматически. КБ появятся после пятого тура.</p>
     {error ? <p className="error card">{error}</p> : null}
     <form action={gameScoringAction}>
       <input type="hidden" name="gameId" value={game.id} />
+      <input type="hidden" name="actionToken" value={crypto.randomUUID()} />
       <div className="score-list">
         {game.seats.map((seat) => {
           const score = scoreBySeat.get(seat.id)!;
@@ -75,21 +77,22 @@ async function ScoringScreen({ gameId, error }: { gameId: string; error?: string
         })}
       </div>
       {!locked ? <>
-        <label className="approval"><input type="checkbox" name="headJudgeApproved" defaultChecked={approved} /> Согласовано с Главным судьёй</label>
-        <div className="actions"><button className="button secondary" type="submit" name="intent" value="SAVE">Сохранить</button><button className="button" type="submit" name="intent" value="CLOSE">Закрыть игру</button></div>
+        {canApproveHeadJudge(user) ? <label className="approval"><input type="checkbox" name="headJudgeApproved" defaultChecked={approved} /> Согласовано с Главным судьёй</label> : null}
+        <div className="actions"><PendingSubmit className="button secondary" name="intent" value="SAVE">Сохранить</PendingSubmit><PendingSubmit name="intent" value="CLOSE">Закрыть игру</PendingSubmit></div>
       </> : null}
     </form>
     {locked ? <>
       <section className="card"><h2>Игра закрыта</h2><p className="muted">Обычное редактирование заблокировано. Следующий тур доступен на странице миникапа.</p><Link className="button" href={`/tournaments/${game.round.tournamentId}`}>К турам</Link></section>
-      <details className="card tools"><summary>⋯ Ручная корректировка баллов</summary><form action={scoreOverrideAction} className="stack-form">
+      {canDangerousOverride(user) ? <details className="card tools"><summary>⋯ Ручная корректировка баллов</summary><form action={scoreOverrideAction} className="stack-form">
         <input type="hidden" name="gameId" value={game.id} />
+        <input type="hidden" name="actionToken" value={crypto.randomUUID()} />
         <select name="gameSeatId">{game.seats.map((seat) => <option value={seat.id} key={seat.id}>№{seat.seatNumber} {seat.player.nickname}</option>)}</select>
         <input name="judgeAdditionalPoints" inputMode="decimal" placeholder="Новое ДБ" required />
         <input name="penaltyValue" inputMode="decimal" placeholder="Доп. штраф, например -0.2 (необязательно)" />
         <input name="manualCompensationPoints" inputMode="decimal" placeholder="Ручной КБ (необязательно)" />
-        <input name="reason" placeholder="Причина (обязательно)" required />
-        <button type="submit">Применить и потребовать пересчёт</button>
-      </form></details>
+        <input name="reason" maxLength={500} placeholder="Причина (обязательно)" required />
+        <PendingSubmit>Применить и потребовать пересчёт</PendingSubmit>
+      </form></details> : null}
     </> : null}
   </main>;
 }
@@ -97,9 +100,11 @@ async function ScoringScreen({ gameId, error }: { gameId: string; error?: string
 export default async function GamePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string }> }) {
   const { id } = await params;
   const { error } = await searchParams;
+  const user = await requirePageUser();
+  await requireGameAccess(user, id);
   const game = await getGameSnapshot(id);
   if (!game) notFound();
-  if (game.phase === "SCORING" || game.status === "COMPLETED") return <ScoringScreen gameId={game.id} error={error} />;
+  if (game.phase === "SCORING" || game.status === "COMPLETED") return <ScoringScreen gameId={game.id} error={error} user={user} />;
   const active = game.seats.filter((seat) => seat.status === "ACTIVE");
   const current = game.seats.find((seat) => seat.seatNumber === game.currentSpeakerSeat);
   const openVote = game.voteSessions.find((session) => session.status === "OPEN");
@@ -111,6 +116,7 @@ export default async function GamePage({ params, searchParams }: { params: Promi
     return <main className="page game-page">
       <div className="game-topline"><Link href={`/tournaments/${game.round.tournamentId}`}>← Турнир</Link><ConnectionStatus gameId={game.id} snapshot={snapshot} /></div>
       <p className="eyebrow">Тур {game.round.number}</p><h1>Назначение ролей</h1>
+      <p className="assigned-judges">Судьи: {game.round.tournament.judges.map(({ user: judge }) => judge.displayName).join(", ") || "не назначены"}</p>
       <p className="lead">Выберите Дона, двух Мафий и Шерифа. Остальные места остаются мирными.</p>
       {error ? <p className="error">{error}</p> : null}
       <div className="role-list">
@@ -135,7 +141,7 @@ export default async function GamePage({ params, searchParams }: { params: Promi
     </header>
 
     {error ? <p className="error card">{error}</p> : null}
-    {game.pendingWinner ? <section className="winner-banner"><b>Система определила {winnerLabels[game.pendingWinner]}</b><div className="actions"><CommandForm gameId={game.id} intent="CONFIRM_WINNER"><button className="button" type="submit">Подтвердить</button></CommandForm><CommandForm gameId={game.id} intent="CONTINUE_MANUALLY"><button className="button secondary" type="submit">Продолжить вручную</button></CommandForm></div></section> : null}
+    {game.pendingWinner && game.phase === "RESULT_CONFIRMATION" ? <section className="winner-banner"><b>Система определила {winnerLabels[game.pendingWinner]}</b><div className="actions"><CommandForm gameId={game.id} intent="CONFIRM_WINNER"><button className="button" type="submit">Подтвердить</button></CommandForm>{canDangerousOverride(user) ? <CommandForm gameId={game.id} intent="CONTINUE_MANUALLY"><button className="button secondary" type="submit">Продолжить вручную</button></CommandForm> : null}</div></section> : null}
 
     <>
       <section className="judge-seats">
@@ -178,7 +184,7 @@ export default async function GamePage({ params, searchParams }: { params: Promi
 
         {game.phase === "FINAL_SPEECH" ? <CommandForm gameId={game.id} intent="COMPLETE_FINAL_SPEECH"><button className="button" type="submit">К протоколу</button></CommandForm> : null}
         {game.phase === "PROTOCOL" ? <CommandForm gameId={game.id} intent="COMPLETE_PROTOCOL"><button className="button" type="submit">Завершить протокол</button></CommandForm> : null}
-        {game.phase === "RESULT_CONFIRMATION" && !game.pendingWinner ? <div className="actions">{(["RED", "BLACK", "DRAW"] as const).map((winner) => <CommandForm gameId={game.id} intent="CONFIRM_WINNER" key={winner}><input type="hidden" name="winner" value={winner} /><button className="button" type="submit">{winner}</button></CommandForm>)}</div> : null}
+        {game.phase === "RESULT_CONFIRMATION" && !game.pendingWinner && canDangerousOverride(user) ? <p className="muted">Установите результат через ручную корректировку с обязательной причиной.</p> : null}
         {game.nightActions.some((action) => !action.undoneAt) && game.phase === "NIGHT" ? <CommandForm gameId={game.id} intent="UNDO_NIGHT_ACTION"><button className="undo-button" type="submit">Undo ночного действия</button></CommandForm> : null}
         {game.voteSessions.some((session) => session.status === "COMPLETED") && ["FINAL_SPEECH", "CAR_CRASH"].includes(game.phase) ? <CommandForm gameId={game.id} intent="UNDO_VOTE"><button className="undo-button" type="submit">Undo голосования</button></CommandForm> : null}
       </section>
@@ -187,7 +193,7 @@ export default async function GamePage({ params, searchParams }: { params: Promi
     <details className="card tools"><summary>⋯ Дополнительные действия</summary>
       <h3>Штраф</h3><CommandForm gameId={game.id} intent="ADD_PENALTY" className="stack-form"><select name="seatNumber">{game.seats.map((seat) => <option key={seat.id} value={seat.seatNumber}>№{seat.seatNumber} {seat.player.nickname}</option>)}</select><select name="value">{[-0.2, -0.4, -0.5, -0.7, -1.2, -1.6].map((value) => <option key={value} value={value}>{value}</option>)}</select><input name="comment" placeholder="Комментарий (необязательно)" /><button type="submit">Добавить штраф</button></CommandForm>
       {game.penalties.some((penalty) => !penalty.undoneAt) ? <CommandForm gameId={game.id} intent="UNDO_PENALTY"><button className="undo-button" type="submit">Undo штрафа</button></CommandForm> : null}
-      <h3>Ручная корректировка</h3><CommandForm gameId={game.id} intent="MANUAL_OVERRIDE" className="stack-form"><select name="kind"><option value="FOUL">Число фолов</option><option value="ROLE">Роль</option><option value="STATUS">Выбыл / восстановить</option><option value="PHASE">Phase / subphase</option><option value="WINNER">Победитель / ничья</option><option value="CANCEL_VOTE">Отменить голосование</option><option value="PENALTY">Custom penalty</option></select><select name="seatNumber"><option value="">Без игрока</option>{game.seats.map((seat) => <option key={seat.id} value={seat.seatNumber}>№{seat.seatNumber} {seat.player.nickname}</option>)}</select><input name="value" placeholder="Новое значение" /><input name="extra" placeholder="Subphase / комментарий" /><input name="reason" placeholder="Причина (обязательно)" required /><button type="submit">Применить корректировку</button></CommandForm>
+      {canDangerousOverride(user) ? <><h3>Ручная корректировка</h3><CommandForm gameId={game.id} intent="MANUAL_OVERRIDE" className="stack-form"><select name="kind"><option value="FOUL">Число фолов</option><option value="ROLE">Роль</option><option value="STATUS">Выбыл / восстановить</option><option value="PHASE">Phase / subphase</option><option value="WINNER">Победитель / ничья</option><option value="CANCEL_VOTE">Отменить голосование</option><option value="PENALTY">Custom penalty</option></select><select name="seatNumber"><option value="">Без игрока</option>{game.seats.map((seat) => <option key={seat.id} value={seat.seatNumber}>№{seat.seatNumber} {seat.player.nickname}</option>)}</select><input name="value" placeholder="Новое значение" /><input name="extra" maxLength={500} placeholder="Subphase / комментарий" /><input name="reason" maxLength={500} placeholder="Причина (обязательно)" required /><button type="submit">Применить корректировку</button></CommandForm></> : null}
       <h3>Audit</h3><ol className="audit-list">{game.events.slice(0, 20).map((event) => <li key={event.id}><b>{event.type}</b><time>{event.createdAt.toLocaleTimeString("ru-RU")}</time>{event.overrideReason ? <small>{event.overrideReason}</small> : null}</li>)}</ol>
     </details>
   </main>;
