@@ -1,7 +1,12 @@
 node_modules/
 .next/
 .env
+.env.*
+!.env.example
 generated/
 coverage/
+backups/
+*.dump
+postgres-data/
 *.log
 *.tsbuildinfo
