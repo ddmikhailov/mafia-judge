@@ -8,6 +8,17 @@ Amvera HTTPS domain -> Next.js Docker application -> managed PostgreSQL (interna
 
 Amvera does not run `docker-compose.prod.yml`; that file remains the VPS deployment option. The Amvera project uses `Dockerfile` target `amvera-runner` and `amvera.yaml`.
 
+## Current production
+
+- application project: `mafia-judge`;
+- managed PostgreSQL project: `mafia-judge-db`;
+- public URL: `https://mafia-judge-ddmikhailov.amvera.io`;
+- health check: `https://mafia-judge-ddmikhailov.amvera.io/api/health`;
+- database is reachable by the application only through Amvera's internal network;
+- source is mirrored to GitHub at `https://github.com/ddmikhailov/mafia-judge` and to the Amvera project repository.
+
+The existing `rfm-live` application is unrelated to this deployment and must remain stopped unless the owner explicitly decides otherwise.
+
 ## Projects
 
 Create two projects in the same Amvera account:
