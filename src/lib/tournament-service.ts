@@ -43,6 +43,12 @@ export async function regenerateSeating(roundId: string) {
       },
     });
     if (!game) throw new Error("Тур не найден");
+    if (game.round.number > 1) {
+      const previous = await tx.round.findUnique({
+        where: { tournamentId_number: { tournamentId: game.round.tournamentId, number: game.round.number - 1 } },
+      });
+      if (previous?.status !== "COMPLETED") throw new Error("Сначала завершите предыдущий тур");
+    }
 
     const seats = buildRegeneratedSeating(
       game.seatingStatus,

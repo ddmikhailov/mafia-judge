@@ -29,6 +29,22 @@ enum GameStatus {
   PENDING
   IN_PROGRESS
   SCORING
+  COMPLETED
+}
+
+enum TournamentScoringStatus {
+  ACTIVE
+  READY_TO_FINALIZE
+  REQUIRES_MANUAL_DECISION
+  REQUIRES_DRAW_LOT
+  NEEDS_RECALCULATION
+  FINALIZED
+}
+
+enum RankingStatus {
+  PROVISIONAL
+  REQUIRES_DRAW_LOT
+  FINAL
 }
 
 enum SeatingStatus {
@@ -132,18 +148,22 @@ model Organization {
 }
 
 model Tournament {
-  id                   String           @id @default(uuid())
+  id                   String                  @id @default(uuid())
   organizationId       String
-  organization         Organization     @relation(fields: [organizationId], references: [id])
+  organization         Organization            @relation(fields: [organizationId], references: [id])
   name                 String
-  format               TournamentFormat @default(MINICUP)
-  status               TournamentStatus @default(DRAFT)
-  roundCount           Int              @default(5)
-  compensationDistance Int              @default(5)
+  format               TournamentFormat        @default(MINICUP)
+  status               TournamentStatus        @default(DRAFT)
+  roundCount           Int                     @default(5)
+  compensationDistance Int                     @default(5)
+  scoringStatus        TournamentScoringStatus @default(ACTIVE)
+  finalizedAt          DateTime?
   players              TournamentPlayer[]
   rounds               Round[]
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
+  scores               TournamentScore[]
+  events               TournamentEvent[]
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
 
   @@index([organizationId])
 }
@@ -153,6 +173,8 @@ model Player {
   nickname          String
   tournamentEntries TournamentPlayer[]
   seats             GameSeat[]
+  gameScores        GameScore[]
+  tournamentScores  TournamentScore[]
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 }
@@ -186,20 +208,20 @@ model Round {
 }
 
 model Game {
-  id                    String          @id @default(uuid())
-  roundId               String          @unique
-  round                 Round           @relation(fields: [roundId], references: [id], onDelete: Cascade)
-  status                GameStatus      @default(PENDING)
-  seatingStatus         SeatingStatus   @default(PENDING)
-  phase                 GamePhase       @default(SETUP)
-  subphase              GameSubphase    @default(SETUP)
-  dayNumber             Int             @default(0)
-  nightNumber           Int             @default(0)
+  id                    String        @id @default(uuid())
+  roundId               String        @unique
+  round                 Round         @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  status                GameStatus    @default(PENDING)
+  seatingStatus         SeatingStatus @default(PENDING)
+  phase                 GamePhase     @default(SETUP)
+  subphase              GameSubphase  @default(SETUP)
+  dayNumber             Int           @default(0)
+  nightNumber           Int           @default(0)
   firstSpeakerSeat      Int?
   currentSpeakerSeat    Int?
-  quietPhaseCount       Int             @default(0)
-  firstDayVoteExitCount Int             @default(0)
-  pendingExitSeats      Int[]           @default([])
+  quietPhaseCount       Int           @default(0)
+  firstDayVoteExitCount Int           @default(0)
+  pendingExitSeats      Int[]         @default([])
   exitResume            String?
   winner                GameWinner?
   pendingWinner         GameWinner?
@@ -212,27 +234,29 @@ model Game {
   blackTriple           BlackTriple?
   penalties             Penalty[]
   events                GameEvent[]
-  createdAt             DateTime        @default(now())
-  updatedAt             DateTime        @updatedAt
+  scores                GameScore[]
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
 }
 
 model GameSeat {
-  id                       String            @id @default(uuid())
+  id                       String             @id @default(uuid())
   gameId                   String
   playerId                 String
   seatNumber               Int
   role                     PlayerRole?
   team                     PlayerTeam?
-  status                   GameSeatStatus    @default(ACTIVE)
+  status                   GameSeatStatus     @default(ACTIVE)
   eliminationReason        EliminationReason?
-  foulCount                Int               @default(0)
-  speechRestrictionPending Boolean           @default(false)
-  game                     Game              @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  player                   Player            @relation(fields: [playerId], references: [id])
+  foulCount                Int                @default(0)
+  speechRestrictionPending Boolean            @default(false)
+  game                     Game               @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  player                   Player             @relation(fields: [playerId], references: [id])
   blackTriples             BlackTriple[]
   penalties                Penalty[]
-  createdAt                DateTime          @default(now())
-  updatedAt                DateTime          @updatedAt
+  score                    GameScore?
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
 
   @@unique([gameId, playerId])
   @@unique([gameId, seatNumber])
@@ -308,17 +332,17 @@ model BlackTriple {
 }
 
 model Penalty {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   gameId     String
   gameSeatId String
-  value      Decimal  @db.Decimal(5, 2)
+  value      Decimal   @db.Decimal(5, 2)
   type       String
   comment    String?
-  isOverride Boolean  @default(false)
+  isOverride Boolean   @default(false)
   undoneAt   DateTime?
-  game       Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  gameSeat   GameSeat @relation(fields: [gameSeatId], references: [id])
-  createdAt  DateTime @default(now())
+  game       Game      @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  gameSeat   GameSeat  @relation(fields: [gameSeatId], references: [id])
+  createdAt  DateTime  @default(now())
 
   @@index([gameId, gameSeatId])
 }
@@ -333,4 +357,69 @@ model GameEvent {
   createdAt      DateTime @default(now())
 
   @@index([gameId, createdAt])
+}
+
+model GameScore {
+  id                       String   @id @default(uuid())
+  gameId                   String
+  gameSeatId               String   @unique
+  playerId                 String
+  basePoints               Decimal  @db.Decimal(7, 3)
+  judgeAdditionalPoints    Decimal  @default(0) @db.Decimal(7, 3)
+  blackTriplePoints        Decimal  @default(0) @db.Decimal(7, 3)
+  penaltyPoints            Decimal  @default(0) @db.Decimal(7, 3)
+  compensationPoints       Decimal  @default(0) @db.Decimal(7, 3)
+  manualCompensationPoints Decimal? @db.Decimal(7, 3)
+  totalWithoutCompensation Decimal  @db.Decimal(7, 3)
+  finalTotal               Decimal  @db.Decimal(7, 3)
+  headJudgeApproved        Boolean  @default(false)
+  isLocked                 Boolean  @default(false)
+  game                     Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  gameSeat                 GameSeat @relation(fields: [gameSeatId], references: [id], onDelete: Restrict)
+  player                   Player   @relation(fields: [playerId], references: [id], onDelete: Restrict)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  @@unique([gameId, playerId])
+  @@index([gameId])
+}
+
+model TournamentScore {
+  id                           String        @id @default(uuid())
+  tournamentId                 String
+  playerId                     String
+  baseTotal                    Decimal       @db.Decimal(8, 3)
+  judgeAdditionalTotal         Decimal       @db.Decimal(8, 3)
+  blackTripleTotal             Decimal       @db.Decimal(8, 3)
+  penaltyTotal                 Decimal       @db.Decimal(8, 3)
+  compensationTotal            Decimal       @db.Decimal(8, 3)
+  total                        Decimal       @db.Decimal(8, 3)
+  wins                         Int
+  gamesPlayed                  Int
+  firstNightKillsCount         Int
+  successfulTriple3Count       Int
+  successfulTriple2Count       Int
+  maxNetJudgeAdditionalPerGame Decimal       @db.Decimal(8, 3)
+  finalRank                    Int?
+  rankingStatus                RankingStatus @default(PROVISIONAL)
+  drawLotOrder                 Int?
+  tournament                   Tournament    @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  player                       Player        @relation(fields: [playerId], references: [id], onDelete: Restrict)
+  createdAt                    DateTime      @default(now())
+  updatedAt                    DateTime      @updatedAt
+
+  @@unique([tournamentId, playerId])
+  @@index([tournamentId, finalRank])
+}
+
+model TournamentEvent {
+  id             String     @id @default(uuid())
+  tournamentId   String
+  type           String
+  payload        Json
+  overrideReason String?
+  tournament     Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  createdAt      DateTime   @default(now())
+
+  @@index([tournamentId, createdAt])
 }

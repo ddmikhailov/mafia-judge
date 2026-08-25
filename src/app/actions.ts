@@ -10,6 +10,14 @@ import {
 } from "@/lib/tournament-service";
 import { performGameAction, type GameCommand } from "@/lib/game-service";
 import { ROLES } from "@/lib/game-rules";
+import {
+  closeGameScoring,
+  finalizeTournament,
+  overrideDrawCompensation,
+  overrideGameScore,
+  recordDrawLot,
+  saveGameScoring,
+} from "@/lib/scoring-service";
 
 export type CreateTournamentState = { error?: string };
 
@@ -133,4 +141,86 @@ export async function gameCommandAction(formData: FormData) {
   }
 
   revalidatePath(`/games/${gameId}`);
+}
+
+function scoringInputs(formData: FormData) {
+  const seatIds = formData.getAll("gameSeatId").map(String);
+  const values = formData.getAll("judgeAdditionalPoints").map(String);
+  if (seatIds.length !== values.length) throw new Error("Некорректная форма scoring");
+  return seatIds.map((gameSeatId, index) => ({ gameSeatId, judgeAdditionalPoints: values[index] }));
+}
+
+export async function gameScoringAction(formData: FormData) {
+  const gameId = z.string().uuid().parse(formData.get("gameId"));
+  const intent = z.enum(["SAVE", "CLOSE"]).parse(formData.get("intent"));
+  try {
+    const inputs = scoringInputs(formData);
+    const approved = formData.get("headJudgeApproved") === "on";
+    if (intent === "CLOSE") await closeGameScoring(gameId, inputs, approved);
+    else await saveGameScoring(gameId, inputs, approved);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Не удалось сохранить scoring";
+    redirect(`/games/${gameId}?error=${encodeURIComponent(message)}`);
+  }
+  revalidatePath(`/games/${gameId}`);
+}
+
+export async function scoreOverrideAction(formData: FormData) {
+  const gameId = z.string().uuid().parse(formData.get("gameId"));
+  try {
+    await overrideGameScore({
+      gameId,
+      gameSeatId: z.string().uuid().parse(formData.get("gameSeatId")),
+      judgeAdditionalPoints: z.string().trim().min(1).parse(formData.get("judgeAdditionalPoints")),
+      penaltyValue: String(formData.get("penaltyValue") ?? "").trim() || undefined,
+      manualCompensationPoints: String(formData.get("manualCompensationPoints") ?? "").trim() || undefined,
+      reason: z.string().trim().min(1).parse(formData.get("reason")),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Не удалось изменить scoring";
+    redirect(`/games/${gameId}?error=${encodeURIComponent(message)}`);
+  }
+  revalidatePath(`/games/${gameId}`);
+}
+
+export async function finalizeTournamentAction(formData: FormData) {
+  const tournamentId = z.string().uuid().parse(formData.get("tournamentId"));
+  try {
+    await finalizeTournament(tournamentId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Не удалось рассчитать итог";
+    redirect(`/tournaments/${tournamentId}?error=${encodeURIComponent(message)}`);
+  }
+  revalidatePath(`/tournaments/${tournamentId}`);
+}
+
+export async function compensationOverrideAction(formData: FormData) {
+  const tournamentId = z.string().uuid().parse(formData.get("tournamentId"));
+  try {
+    await overrideDrawCompensation({
+      tournamentId,
+      gameSeatId: z.string().uuid().parse(formData.get("gameSeatId")),
+      value: z.string().trim().min(1).parse(formData.get("value")),
+      reason: z.string().trim().min(1).parse(formData.get("reason")),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Не удалось сохранить КБ";
+    redirect(`/tournaments/${tournamentId}?error=${encodeURIComponent(message)}`);
+  }
+  revalidatePath(`/tournaments/${tournamentId}`);
+}
+
+export async function drawLotAction(formData: FormData) {
+  const tournamentId = z.string().uuid().parse(formData.get("tournamentId"));
+  try {
+    await recordDrawLot({
+      tournamentId,
+      orderedPlayerIds: formData.getAll("orderedPlayerIds").map(String),
+      reason: z.string().trim().min(1).parse(formData.get("reason")),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Не удалось записать жребий";
+    redirect(`/tournaments/${tournamentId}?error=${encodeURIComponent(message)}`);
+  }
+  revalidatePath(`/tournaments/${tournamentId}`);
 }

@@ -148,10 +148,32 @@ h2 { margin: 0; font-size: 20px; }
 .audit-list small { grid-column: 1 / -1; }
 .role-list { display: grid; gap: 8px; }
 .role-row { display: grid; grid-template-columns: 1fr 110px auto; align-items: center; gap: 7px; padding: 9px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+.score-list { display: grid; gap: 10px; margin-top: 16px; }
+.score-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 13px; border: 1px solid var(--border); border-radius: 13px; background: #fff; }
+.score-player { display: grid; gap: 3px; }
+.score-player span { color: var(--muted); font-size: 12px; }
+.score-card dl { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 0; }
+.score-card dl div { padding: 7px; border-radius: 8px; background: #f4f4f0; }
+.score-card dt { color: var(--muted); font-size: 10px; }
+.score-card dd { margin: 2px 0 0; font-weight: 800; }
+.score-card .score-total { background: #fef2f2; color: #991b1b; }
+.score-db { display: grid; grid-template-columns: auto 76px; align-items: center; gap: 7px; font-weight: 800; }
+.score-db select { min-height: 44px; border: 1px solid #bdbdb5; border-radius: 9px; background: #fff; }
+.approval { display: flex; align-items: center; gap: 10px; min-height: 48px; margin-top: 14px; font-weight: 700; }
+.approval input { width: 22px; height: 22px; }
+.standings-scroll { overflow-x: auto; margin: 12px -18px -18px; padding: 0 18px 18px; }
+.standings-scroll table { min-width: 1050px; border-collapse: collapse; font-size: 13px; }
+.standings-scroll th, .standings-scroll td { padding: 9px 10px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
+.standings-scroll th:nth-child(2), .standings-scroll td:nth-child(2) { position: sticky; left: 0; background: var(--surface); text-align: left; }
+.compensation-cell { color: #166534; font-weight: 800; }
+.finalize-card .stack-form { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+.finalize-card label { display: grid; gap: 5px; }
 
 @media (max-width: 420px) {
   .players-grid, .player-list, .actions { grid-template-columns: 1fr; }
   .actions .button { margin-top: 10px; }
   .role-row { grid-template-columns: 1fr 105px; }
   .role-row button { grid-column: 1 / -1; }
+  .page { padding-bottom: calc(48px + env(safe-area-inset-bottom)); }
+  .score-card dl { grid-template-columns: repeat(2, 1fr); }
 }
