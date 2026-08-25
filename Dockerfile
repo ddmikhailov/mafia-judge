@@ -16,6 +16,9 @@ ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL \
 COPY . .
 RUN npm run build
 
+FROM dependencies AS production-dependencies
+RUN npm prune --omit=dev
+
 FROM dependencies AS migrator
 ENV NODE_ENV=production
 COPY prisma ./prisma
@@ -34,3 +37,21 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 USER nextjs
 EXPOSE 3000
 CMD ["node", "server.js"]
+
+# Amvera runs one Dockerfile per project and has no release phase. This target
+# keeps the Prisma CLI so committed migrations can fail-fast before app startup.
+FROM base AS amvera-runner
+ENV NODE_ENV=production \
+    HOSTNAME=0.0.0.0 \
+    PORT=3000
+RUN groupadd --system --gid 1001 nodejs \
+    && useradd --system --uid 1001 --gid nodejs nextjs
+COPY --from=production-dependencies --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --chown=nextjs:nodejs package.json package-lock.json prisma.config.ts ./
+COPY --chown=nextjs:nodejs prisma ./prisma
+USER nextjs
+EXPOSE 3000
+CMD ["sh", "-c", "npx prisma migrate deploy && exec node server.js"]

@@ -45,3 +45,5 @@ npm run build
 ## Production
 
 Production-развёртывание на одном VPS через Docker Compose, PostgreSQL и Caddy описано в [DEPLOYMENT.md](DEPLOYMENT.md). Краткая памятка на день турнира — [TOURNAMENT_RUNBOOK.md](TOURNAMENT_RUNBOOK.md).
+
+Альтернативное production-развёртывание через Amvera и managed PostgreSQL описано в [AMVERA_DEPLOYMENT.md](AMVERA_DEPLOYMENT.md).
