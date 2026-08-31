@@ -60,6 +60,17 @@ npm run admin:create
 
 Без `BOOTSTRAP_ADMIN=1` скрипт не подключается к БД. Пароли/хеши не попадают в логи или Git. Не оставлять bootstrap-секреты в настройках после завершения.
 
+## Проверка security на отдельной локальной БД
+
+Никогда не запускать integration fixtures против production: тесты создают и удаляют собственные турниры и пользователей. `SECURITY_INTEGRATION=1` разрешён тестовым набором только для localhost/127.0.0.1.
+
+```bash
+DATABASE_URL='<local-test-postgresql-url>' npx prisma migrate deploy
+DATABASE_URL='<local-test-postgresql-url>' SECURITY_INTEGRATION=1 npm test -- --no-file-parallelism
+```
+
+Проверяются реальные DB-сессии, login/logout/rotation, inactive user, права на назначенный турнир и Excel, запрет поддельных override/approval, двойной foul/penalty, конкурентные команды, audit/undo/archive и переход к SCORING. Подменяются только Next request cookies/redirect/cache, а не Prisma/services. Файлы запускаются последовательно для совместимости с локальным Prisma Dev; отдельный тест конкурентных игровых запросов остаётся параллельным.
+
 ## Health and smoke
 
 ```bash
