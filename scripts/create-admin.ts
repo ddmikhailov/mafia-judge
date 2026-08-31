@@ -3,8 +3,7 @@ import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../generated/prisma/client";
-import { hashPassword } from "../src/lib/auth/password";
-import { DISPLAY_NAME_MAX, LOGIN_MAX, normalizeLogin } from "../src/lib/input-limits";
+import { createAdminAccount } from "./admin-account";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required");
@@ -16,16 +15,14 @@ async function value(envName: string, prompt: string) {
 }
 
 try {
-  const login = normalizeLogin(await value("ADMIN_LOGIN", "Логин SUPER_ADMIN: "));
+  const login = await value("ADMIN_LOGIN", "Логин SUPER_ADMIN: ");
   const displayName = await value("ADMIN_DISPLAY_NAME", "Отображаемое имя: ");
   const password = await value("ADMIN_PASSWORD", "Пароль (ввод будет виден в интерактивном режиме): ");
-  if (!login || login.length > LOGIN_MAX) throw new Error("Некорректная длина логина");
-  if (!displayName || displayName.length > DISPLAY_NAME_MAX) throw new Error("Некорректная длина имени");
-  if (await prisma.user.findUnique({ where: { login } })) throw new Error("Пользователь с таким логином уже существует");
-  const organization = await prisma.organization.findUnique({ where: { id: "default-organization" } });
-  if (!organization) throw new Error("Default organization not found; apply migrations first");
-  await prisma.user.create({ data: { organizationId: organization.id, login, displayName, passwordHash: await hashPassword(password), role: "SUPER_ADMIN" } });
+  await createAdminAccount(prisma, { login, displayName, password });
   console.log(`SUPER_ADMIN ${login} создан. Пароль не выводится и не сохраняется в открытом виде.`);
+} catch {
+  console.error("Не удалось создать SUPER_ADMIN. Проверьте доступ к БД, уникальность логина и требования к паролю; существующие аккаунты не изменены.");
+  process.exitCode = 1;
 } finally {
   rl.close();
   await prisma.$disconnect();

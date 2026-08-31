@@ -59,4 +59,4 @@ COPY --chown=nextjs:nodejs scripts ./scripts
 COPY --from=builder --chown=nextjs:nodejs /app/generated ./generated
 USER nextjs
 EXPOSE 3000
-CMD ["sh", "-c", "npx prisma migrate deploy && exec node server.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node --import tsx scripts/bootstrap-admin.ts && exec node server.js"]
