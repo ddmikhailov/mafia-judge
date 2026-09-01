@@ -60,6 +60,10 @@ npm run admin:create
 
 Без `BOOTSTRAP_ADMIN=1` скрипт не подключается к БД. Пароли/хеши не попадают в логи или Git. Не оставлять bootstrap-секреты в настройках после завершения.
 
+### Восстановление доступа к существующему SUPER_ADMIN
+
+Если временный пароль утрачен, использовать тот же startup script в recovery-режиме. В Amvera пользователь лично добавляет runtime-переменные `RESET_SUPER_ADMIN=1`, `RECOVERY_ADMIN_LOGIN=admin` и secret `RECOVERY_ADMIN_PASSWORD` со своим новым паролем. После restart скрипт меняет пароль только активного `SUPER_ADMIN`, отзывает все его сессии и не создаёт аккаунтов. После сообщения `SUPER_ADMIN password reset` удалить все три recovery-настройки и снова restart. Пароль не передавать в Git, чат или логи.
+
 ## Проверка security на отдельной локальной БД
 
 Никогда не запускать integration fixtures против production: тесты создают и удаляют собственные турниры и пользователей. `SECURITY_INTEGRATION=1` разрешён тестовым набором только для localhost/127.0.0.1.
