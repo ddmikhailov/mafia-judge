@@ -26,6 +26,7 @@ export const GAME_COMMAND_POLICY: Record<string, Policy> = {
   SKIP_BLACK_TRIPLE: { statuses: ["IN_PROGRESS"], phases: ["NIGHT"], subphases: ["BLACK_TRIPLE"] },
   UNDO_NIGHT_ACTION: { statuses: ["IN_PROGRESS"], phases: ["NIGHT"] },
   COMPLETE_FINAL_SPEECH: { statuses: ["IN_PROGRESS"], phases: ["FINAL_SPEECH"] },
+  SAVE_PROTOCOL: { statuses: ["IN_PROGRESS"], phases: ["PROTOCOL"], subphases: ["PROTOCOL"] },
   COMPLETE_PROTOCOL: { statuses: ["IN_PROGRESS"], phases: ["PROTOCOL"] },
   CONFIRM_WINNER: { statuses: ["IN_PROGRESS"], phases: ["RESULT_CONFIRMATION"], subphases: ["RESULT_CONFIRMATION"] },
   DECLARE_WINNER: { statuses: ["IN_PROGRESS"], phases: [...LIVE_PHASES, "RESULT_CONFIRMATION"] },
@@ -43,7 +44,7 @@ export function assertCommandAllowed(state: CommandState, commandType: string) {
   if (commandType === "CONTINUE_MANUALLY" && !state.pendingWinner) throw new DomainError("Нет предложенного результата для продолжения", "COMMAND_NOT_ALLOWED", 409);
 }
 
-export const HIGH_RISK_IDEMPOTENT_COMMANDS = new Set(["ADD_FOUL", "ADD_PENALTY", "DECLARE_WINNER", "MANUAL_OVERRIDE"]);
+export const HIGH_RISK_IDEMPOTENT_COMMANDS = new Set(["ADD_FOUL", "ADD_PENALTY", "SAVE_PROTOCOL", "DECLARE_WINNER", "MANUAL_OVERRIDE"]);
 
 export function assertPendingWinnerConfirmation(state: CommandState, winner?: string) {
   if (state.pendingWinner && winner && winner !== state.pendingWinner) {

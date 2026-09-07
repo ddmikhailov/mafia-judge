@@ -13,6 +13,7 @@ import { publicError, DomainError } from "@/lib/errors";
 import { boundedComment, boundedReason, parseFiniteDecimal } from "@/lib/input-limits";
 import { validateOverride } from "@/lib/manual-override";
 import { consumeRateLimit } from "@/lib/rate-limit";
+import { PROTOCOL_MARKS } from "@/lib/protocol";
 
 export type CreateTournamentState = { error?: string };
 const integer = z.coerce.number().int();
@@ -84,6 +85,7 @@ export async function gameCommandAction(formData: FormData) {
     switch (intent) {
       case "ASSIGN_ROLE": command = { type: intent, seatNumber: integer.min(1).max(10).parse(formData.get("seatNumber")), role: z.enum(ROLES).parse(formData.get("role")) }; break;
       case "START_GAME": case "ADVANCE_FIRST_NIGHT": case "COMPLETE_SPEECH": case "UNDO_FOUL": case "UNDO_NOMINATION": case "UNDO_VOTE": case "COMPLETE_CRASH_SPEECH": case "SKIP_BLACK_TRIPLE": case "UNDO_NIGHT_ACTION": case "COMPLETE_FINAL_SPEECH": case "COMPLETE_PROTOCOL": case "CONTINUE_MANUALLY": case "UNDO_PENALTY": command = { type: intent }; break;
+      case "SAVE_PROTOCOL": command = { type: intent, marks: Array.from({ length: 10 }, (_, index) => { const seatNumber = index + 1; const value = String(formData.get(`mark-${seatNumber}`) ?? ""); return value ? { seatNumber, mark: z.enum(PROTOCOL_MARKS).parse(value) } : null; }).filter((entry): entry is { seatNumber: number; mark: (typeof PROTOCOL_MARKS)[number] } => entry !== null), note: boundedComment.parse(String(formData.get("note") ?? "")) || undefined, complete: formData.get("complete") === "true" }; break;
       case "ADD_FOUL": command = { type: intent, seatNumber: integer.min(1).max(10).parse(formData.get("seatNumber")) }; break;
       case "ADD_NOMINATION": command = { type: intent, nomineeSeat: integer.min(1).max(10).parse(formData.get("nomineeSeat")) }; break;
       case "RECORD_VOTE": command = { type: intent, votes: formData.getAll("votes").map((value) => String(value).trim() === "" ? null : integer.min(0).max(10).parse(value)) }; break;

@@ -69,6 +69,10 @@ describe("game command lifecycle", () => {
   it("accepts winner confirmation in result confirmation", () => expect(() => assertCommandAllowed({ status: "IN_PROGRESS", phase: "RESULT_CONFIRMATION", subphase: "RESULT_CONFIRMATION", pendingWinner: "RED" }, "CONFIRM_WINNER")).not.toThrow());
   it("allows manual winner declaration during a live game", () => expect(() => assertCommandAllowed({ status: "IN_PROGRESS", phase: "DAY", subphase: "SPEECH" }, "DECLARE_WINNER")).not.toThrow());
   it("rejects manual winner declaration before the game starts", () => expect(() => assertCommandAllowed({ status: "PENDING", phase: "ROLE_ASSIGNMENT", subphase: "ROLE_ASSIGNMENT" }, "DECLARE_WINNER")).toThrow("недоступно"));
+  it("allows protocol notes only during protocol", () => {
+    expect(() => assertCommandAllowed({ status: "IN_PROGRESS", phase: "PROTOCOL", subphase: "PROTOCOL" }, "SAVE_PROTOCOL")).not.toThrow();
+    expect(() => assertCommandAllowed({ status: "IN_PROGRESS", phase: "DAY", subphase: "SPEECH" }, "SAVE_PROTOCOL")).toThrow("недоступно");
+  });
   it("rejects replacing a pending winner", () => expect(() => assertPendingWinnerConfirmation({ status: "IN_PROGRESS", phase: "RESULT_CONFIRMATION", subphase: "RESULT_CONFIRMATION", pendingWinner: "RED" }, "BLACK")).toThrow("совпадать"));
   it("requires a pending result to continue manually", () => expect(() => assertCommandAllowed({ status: "IN_PROGRESS", phase: "RESULT_CONFIRMATION", subphase: "RESULT_CONFIRMATION", pendingWinner: null }, "CONTINUE_MANUALLY")).toThrow("Нет предложенного"));
 });

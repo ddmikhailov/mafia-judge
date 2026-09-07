@@ -26,6 +26,7 @@ import {
 } from "@/lib/game-state";
 import { assertCommandAllowed, assertPendingWinnerConfirmation, HIGH_RISK_IDEMPOTENT_COMMANDS } from "@/lib/game-command-policy";
 import { assertPhasePair, validateOverride } from "@/lib/manual-override";
+import { validateProtocolRecord, type ProtocolMark } from "@/lib/protocol";
 
 type Tx = Prisma.TransactionClient;
 const STALE_UNDO = "Состояние игры изменилось после этого действия. Используйте ручную корректировку.";
@@ -50,6 +51,7 @@ export type GameCommand =
   | { type: "SKIP_BLACK_TRIPLE" }
   | { type: "UNDO_NIGHT_ACTION" }
   | { type: "COMPLETE_FINAL_SPEECH" }
+  | { type: "SAVE_PROTOCOL"; marks: Array<{ seatNumber: number; mark: ProtocolMark }>; note?: string; complete: boolean }
   | { type: "COMPLETE_PROTOCOL" }
   | { type: "CONFIRM_WINNER"; winner?: Winner }
   | { type: "DECLARE_WINNER"; winner: "RED" | "BLACK" }
@@ -177,6 +179,23 @@ async function routeAfterChecks(tx: Tx, gameId: string) {
     return;
   }
   await endNight(tx, gameId);
+}
+
+async function advanceAfterProtocol(tx: Tx, game: Awaited<ReturnType<typeof loadGame>>) {
+  const remaining = game.pendingExitSeats.slice(1);
+  if (remaining.length > 0) {
+    await tx.game.update({ where: { id: game.id }, data: { pendingExitSeats: remaining, phase: "FINAL_SPEECH", subphase: "FINAL_SPEECH", currentSpeakerSeat: remaining[0] } });
+    return;
+  }
+  if (game.pendingWinner) {
+    await tx.game.update({ where: { id: game.id }, data: { pendingExitSeats: [], phase: "RESULT_CONFIRMATION", subphase: "RESULT_CONFIRMATION" } });
+  } else if (game.exitResume === "START_NIGHT") {
+    await tx.game.update({ where: { id: game.id }, data: { pendingExitSeats: [] } });
+    await goToNight(tx, game.id, game.dayNumber > 1);
+  } else {
+    await tx.game.update({ where: { id: game.id }, data: { pendingExitSeats: [] } });
+    await endNight(tx, game.id);
+  }
 }
 
 async function afterShot(tx: Tx, gameId: string) {
@@ -578,22 +597,21 @@ async function executeGameAction(tx: Tx, gameId: string, command: GameCommand) {
       return;
     }
 
+    if (command.type === "SAVE_PROTOCOL") {
+      if (game.phase !== "PROTOCOL" || game.currentSpeakerSeat === null) throw new Error("Сейчас не протокол");
+      const record = validateProtocolRecord(command, game.seats.map(({ seatNumber }) => seatNumber));
+      await audit(tx, gameId, "PROTOCOL_SAVED", {
+        speakerSeat: game.currentSpeakerSeat,
+        marks: record.marks,
+        note: record.note ?? null,
+      });
+      if (command.complete) await advanceAfterProtocol(tx, game);
+      return;
+    }
+
     if (command.type === "COMPLETE_PROTOCOL") {
       if (game.phase !== "PROTOCOL") throw new Error("Сейчас не протокол");
-      const remaining = game.pendingExitSeats.slice(1);
-      if (remaining.length > 0) {
-        await tx.game.update({ where: { id: gameId }, data: { pendingExitSeats: remaining, phase: "FINAL_SPEECH", subphase: "FINAL_SPEECH", currentSpeakerSeat: remaining[0] } });
-        return;
-      }
-      if (game.pendingWinner) {
-        await tx.game.update({ where: { id: gameId }, data: { pendingExitSeats: [], phase: "RESULT_CONFIRMATION", subphase: "RESULT_CONFIRMATION" } });
-      } else if (game.exitResume === "START_NIGHT") {
-        await tx.game.update({ where: { id: gameId }, data: { pendingExitSeats: [] } });
-        await goToNight(tx, gameId, game.dayNumber > 1);
-      } else {
-        await tx.game.update({ where: { id: gameId }, data: { pendingExitSeats: [] } });
-        await endNight(tx, gameId);
-      }
+      await advanceAfterProtocol(tx, game);
       return;
     }
 
