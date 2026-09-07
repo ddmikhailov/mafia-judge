@@ -22,13 +22,16 @@ describe("game scoring", () => {
   });
 
   it("exposes only allowed winner and loser DB", () => {
+    expect(allowedJudgeAdditional("RED", "RED")).toEqual([-1.6, -1.2, -0.7, -0.5, -0.4, -0.2, 0, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.2, 1.6]);
     expect(allowedJudgeAdditional("RED", "RED")).toContain(1.6);
-    expect(allowedJudgeAdditional("RED", "BLACK")).toEqual([0, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]);
+    expect(allowedJudgeAdditional("RED", "BLACK")).toEqual([-1.6, -1.2, -0.7, -0.5, -0.4, -0.2, 0, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]);
+    expect(allowedJudgeAdditional("DRAW", "RED")).toEqual([-1.6, -1.2, -0.7, -0.5, -0.4, -0.2, 0]);
   });
 
   it("rejects arbitrary DB and positive DRAW DB", () => {
     expect(() => validateJudgeAdditional("RED", [score("RED", 0.1)], false)).toThrow("недопустимое");
     expect(() => validateJudgeAdditional("DRAW", [score("RED", 0.3)], false)).toThrow("ничьей");
+    expect(() => validateJudgeAdditional("DRAW", [score("RED", -0.4)], false)).not.toThrow();
   });
 
   it("enforces game DB sum and approval", () => {
@@ -36,6 +39,7 @@ describe("game scoring", () => {
     expect(() => validateJudgeAdditional("RED", total36, false)).toThrow("3.5");
     expect(() => validateJudgeAdditional("RED", total36, true)).not.toThrow();
     expect(() => validateJudgeAdditional("RED", [score("RED", 1.6), ...Array.from({ length: 4 }, () => score("RED", 0.7))], true)).toThrow("4.0");
+    expect(() => validateJudgeAdditional("RED", [score("RED", -1.6), score("RED", 1.6), ...Array.from({ length: 4 }, () => score("RED", 0.7))], true)).toThrow("4.0");
   });
 
   it("requires approval for 7–8 rewarded players and rejects 9", () => {

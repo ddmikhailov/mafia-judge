@@ -57,6 +57,11 @@ function formatScore(value: { toString(): string } | string | number) {
   return Number(value.toString()).toLocaleString("ru-RU", { maximumFractionDigits: 3 });
 }
 
+function formatSignedScore(value: { toString(): string } | string | number) {
+  const numericValue = Number(value.toString());
+  return `${numericValue > 0 ? "+" : ""}${formatScore(numericValue)}`;
+}
+
 async function ScoringScreen({ gameId, error, user }: { gameId: string; error?: string; user: Awaited<ReturnType<typeof requirePageUser>> }) {
   const game = await getGameScoringSnapshot(gameId);
   if (!game?.winner) notFound();
@@ -68,7 +73,7 @@ async function ScoringScreen({ gameId, error, user }: { gameId: string; error?: 
     <p className="eyebrow">Тур {game.round.number} · {locked ? "игра закрыта" : "подсчёт баллов"}</p>
     <p className="assigned-judges">Судьи: {game.round.tournament.judges.map(({ user: judge }) => judge.displayName).join(", ") || "не назначены"}</p>
     <h1>{locked ? "Баллы игры" : "Выставление баллов"}</h1>
-    <p className="lead">Основной балл, ТЧ и штрафы рассчитаны автоматически. КБ появятся после пятого тура.</p>
+    <p className="lead">Основной балл, ТЧ и штрафы рассчитаны автоматически. ДБ можно выставить со знаком плюс или минус.</p>
     {error ? <p className="error card">{error}</p> : null}
     <form action={gameScoringAction}>
       <input type="hidden" name="gameId" value={game.id} />
@@ -81,7 +86,7 @@ async function ScoringScreen({ gameId, error, user }: { gameId: string; error?: 
             <input type="hidden" name="gameSeatId" value={seat.id} />
             <div className="score-player"><b>№{seat.seatNumber} {seat.player.nickname}</b><span>{roleLabels[seat.role!]} · {seat.team}</span></div>
             <dl><div><dt>Основной</dt><dd>{formatScore(score.basePoints)}</dd></div><div><dt>ТЧ</dt><dd>{formatScore(score.blackTriplePoints)}</dd></div><div><dt>Штраф</dt><dd>{formatScore(score.penaltyPoints)}</dd></div><div className="score-total"><dt>Итого</dt><dd>{formatScore(score.totalWithoutCompensation)}</dd></div></dl>
-            <label className="score-db">ДБ<select name="judgeAdditionalPoints" defaultValue={score.judgeAdditionalPoints.toString()} disabled={locked}>{values.map((value) => <option value={value} key={value}>+{formatScore(value)}</option>)}</select></label>
+            <label className="score-db">ДБ<select name="judgeAdditionalPoints" defaultValue={score.judgeAdditionalPoints.toString()} disabled={locked}>{values.map((value) => <option value={value} key={value}>{formatSignedScore(value)}</option>)}</select></label>
           </article>;
         })}
       </div>

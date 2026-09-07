@@ -1,6 +1,7 @@
 import type { Team, Winner } from "./game-rules";
 
 const SCALE = 1000;
+const NEGATIVE_DB = [-1.6, -1.2, -0.7, -0.5, -0.4, -0.2] as const;
 const WINNER_DB = [0, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.2, 1.6] as const;
 const LOSER_DB = [0, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8] as const;
 
@@ -26,8 +27,8 @@ export function basePoints(winner: Winner, team: Team): string {
 }
 
 export function allowedJudgeAdditional(winner: Winner, team: Team): readonly number[] {
-  if (winner === "DRAW") return [0];
-  return winner === team ? WINNER_DB : LOSER_DB;
+  if (winner === "DRAW") return [...NEGATIVE_DB, 0];
+  return [...NEGATIVE_DB, ...(winner === team ? WINNER_DB : LOSER_DB)];
 }
 
 export type JudgeScoreInput = {
@@ -59,7 +60,7 @@ export function validateJudgeAdditional(
   if (positive > 8) throw new Error("ДБ можно выдать не более чем 8 игрокам");
   if (positive >= 7 && !headJudgeApproved) throw new Error("ДБ для 7–8 игроков требует согласования с Главным судьёй");
 
-  const total = scores.reduce((sum, score) => sum + scoreUnits(score.judgeAdditionalPoints), 0);
+  const total = scores.reduce((sum, score) => sum + Math.max(scoreUnits(score.judgeAdditionalPoints), 0), 0);
   if (total > 4000) throw new Error("Общая сумма ДБ не может превышать 4.0");
   if (total > 3500 && !headJudgeApproved) throw new Error("Сумма ДБ свыше 3.5 требует согласования с Главным судьёй");
 }
