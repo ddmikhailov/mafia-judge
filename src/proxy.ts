@@ -1,12 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE } from "@/lib/auth/constants";
 
-const PUBLIC_PATHS = ["/login", "/api/health", "/manifest.webmanifest", "/icons/"];
+const PUBLIC_PATHS = new Set(["/login", "/reset-password", "/api/health", "/manifest.webmanifest"]);
+const PUBLIC_PREFIXES = ["/icons/"];
+
+export function isPublicPath(path: string) {
+  return PUBLIC_PATHS.has(path) || PUBLIC_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
 
 export function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
-  const isPublic = PUBLIC_PATHS.some((item) => path === item || path.startsWith(item));
-  if (isPublic || path.startsWith("/_next/")) return NextResponse.next();
+  if (isPublicPath(path) || path.startsWith("/_next/")) return NextResponse.next();
   if (!request.cookies.has(SESSION_COOKIE)) {
     const url = new URL("/login", request.url);
     return NextResponse.redirect(url);

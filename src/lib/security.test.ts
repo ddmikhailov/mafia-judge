@@ -5,6 +5,7 @@ import { assertCommandAllowed, assertPendingWinnerConfirmation } from "./game-co
 import { assertPhasePair, validateOverride } from "./manual-override";
 import { parseFiniteDecimal } from "./input-limits";
 import { hashPasswordResetToken, isPasswordResetTokenFormat } from "./auth/password-reset";
+import { isPublicPath } from "../proxy";
 
 const user = (role: "SUPER_ADMIN" | "HEAD_JUDGE" | "JUDGE") => ({
   id: role, organizationId: "default-organization", login: role.toLowerCase(),
@@ -45,6 +46,17 @@ describe("central role policy", () => {
   it("rejects JUDGE from privileged actions", () => expect(() => requireRole(user("JUDGE"), "SUPER_ADMIN", "HEAD_JUDGE")).toThrow());
   it("allows HEAD_JUDGE dangerous overrides", () => expect(canDangerousOverride(user("HEAD_JUDGE"))).toBe(true));
   it("does not allow JUDGE approvals", () => expect(canApproveHeadJudge(user("JUDGE"))).toBe(false));
+});
+
+describe("public route policy", () => {
+  it("allows the exact password-reset route without a session", () => {
+    expect(isPublicPath("/reset-password")).toBe(true);
+  });
+
+  it("does not make similarly prefixed application routes public", () => {
+    expect(isPublicPath("/reset-password-history")).toBe(false);
+    expect(isPublicPath("/api/health-details")).toBe(false);
+  });
 });
 
 describe("game command lifecycle", () => {
