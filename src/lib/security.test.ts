@@ -4,6 +4,7 @@ import { requireRole, canDangerousOverride, canApproveHeadJudge } from "./author
 import { assertCommandAllowed, assertPendingWinnerConfirmation } from "./game-command-policy";
 import { assertPhasePair, validateOverride } from "./manual-override";
 import { parseFiniteDecimal } from "./input-limits";
+import { hashPasswordResetToken, isPasswordResetTokenFormat } from "./auth/password-reset";
 
 const user = (role: "SUPER_ADMIN" | "HEAD_JUDGE" | "JUDGE") => ({
   id: role, organizationId: "default-organization", login: role.toLowerCase(),
@@ -24,6 +25,18 @@ describe("authentication primitives", () => {
 
   it("rejects short passwords", () => {
     expect(() => hashPassword("short")).toThrow("от 12 до 200");
+  });
+
+  it("rejects passwords that exceed bcrypt's UTF-8 byte limit", () => {
+    expect(() => hashPassword("я".repeat(37))).toThrow("72 байт UTF-8");
+  });
+
+  it("validates and hashes password-reset tokens without retaining plaintext", () => {
+    const token = "a".repeat(43);
+    expect(isPasswordResetTokenFormat(token)).toBe(true);
+    expect(isPasswordResetTokenFormat("short")).toBe(false);
+    expect(hashPasswordResetToken(token)).toMatch(/^[a-f0-9]{64}$/);
+    expect(hashPasswordResetToken(token)).not.toContain(token);
   });
 });
 

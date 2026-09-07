@@ -72,6 +72,8 @@ input:focus, select:focus { border-color: var(--accent); outline: 3px solid rgba
 .button.danger { background: var(--danger); }
 .button.danger:hover { background: #812635; box-shadow: 0 7px 18px rgba(163,49,66,.2); }
 .error { margin: 14px 0 0; padding: 12px 14px; border: 1px solid #efbbc3; border-radius: 12px; background: var(--danger-soft); color: #842536; font-weight: 750; }
+.success { margin: 14px 0 0; padding: 12px 14px; border: 1px solid #acd8c9; border-radius: 12px; background: var(--success-soft); color: #176147; font-weight: 750; }
+.form-hint { margin: 8px 0 0; font-size: 12px; }
 details > summary { list-style: none; }
 details > summary::-webkit-details-marker { display: none; }
 details > summary::after { margin-left: auto; color: var(--accent); content: "+"; font-size: 22px; line-height: 1; }

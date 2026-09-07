@@ -164,6 +164,7 @@ model User {
   role                  UserRole
   isActive              Boolean           @default(true)
   sessions              Session[]
+  passwordResetTokens   PasswordResetToken[]
   tournamentAssignments TournamentJudge[]
   gameEvents            GameEvent[]       @relation("GameEventActor")
   tournamentEvents      TournamentEvent[] @relation("TournamentEventActor")
@@ -184,6 +185,18 @@ model Session {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+
+  @@index([userId, expiresAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
 
   @@index([userId, expiresAt])
 }
