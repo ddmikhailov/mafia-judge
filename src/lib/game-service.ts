@@ -514,7 +514,7 @@ async function executeGameAction(tx: Tx, gameId: string, command: GameCommand) {
       const expected = command.type;
       if (game.phase !== "NIGHT" || game.subphase !== expected) throw new Error("Сейчас недоступна эта проверка");
       const target = game.seats.find((seat) => seat.seatNumber === command.targetSeat);
-      if (!target || target.status !== "ACTIVE" || !target.role) throw new Error("Цель проверки должна быть активна");
+      if (!target?.role) throw new Error("Игрок для проверки не найден");
       const result = command.type === "DON_CHECK" ? donCheck(target.role) : sheriffCheck(target.role);
       const action = await tx.nightAction.create({ data: { gameId, nightNumber: game.nightNumber, type: command.type, targetSeat: target.seatNumber, result } });
       await audit(tx, gameId, command.type, { actionId: action.id, targetSeat: target.seatNumber, result });

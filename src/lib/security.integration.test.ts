@@ -168,6 +168,18 @@ describe.runIf(optedIn)("Stage 4 database-backed security boundaries", () => {
     expect(await prisma.tournamentEvent.findFirst({ where: { tournamentId, type: "TOURNAMENT_ARCHIVED", actorUserId: head.id } })).not.toBeNull();
     await setTournamentArchived(head, tournamentId, false, "Integration restore");
   });
+  it("Don and Sheriff can check a player who already left the game", async () => {
+    const target = await prisma.gameSeat.findUniqueOrThrow({ where: { gameId_seatNumber: { gameId, seatNumber: 5 } } });
+    await prisma.gameSeat.update({ where: { id: target.id }, data: { status: "ELIMINATED", eliminationReason: "VOTE" } });
+    await prisma.game.update({ where: { id: gameId }, data: { phase: "NIGHT", subphase: "DON_CHECK", nightNumber: 2, pendingWinner: null } });
+
+    await performGameAction(gameId, { type: "DON_CHECK", targetSeat: 5 });
+    await performGameAction(gameId, { type: "SHERIFF_CHECK", targetSeat: 5 });
+
+    expect(await prisma.nightAction.count({
+      where: { gameId, targetSeat: 5, type: { in: ["DON_CHECK", "SHERIFF_CHECK"] }, undoneAt: null },
+    })).toBe(2);
+  });
   it("accelerated game reaches SCORING and duplicate scoring close is safe", async () => {
     await createSession(judge.id);
     await gameCommandAction(form({ gameId, intent: "DECLARE_WINNER", winner: "RED", actionToken: randomUUID() }));
