@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import {
   assertSeatingCanBeConfirmed,
+  buildManualSeating,
   buildRegeneratedSeating,
   prepareTournament,
 } from "@/lib/tournament-rules";
@@ -54,6 +55,38 @@ export async function regenerateSeating(roundId: string, context: { actorUserId?
     await tx.game.update({ where: { id: game.id }, data: { seatingStatus: "GENERATED" } });
     await tx.round.update({ where: { id: roundId }, data: { status: "SEATING_READY" } });
     await tx.tournamentEvent.create({ data: { tournamentId: game.round.tournamentId, type: "SEATING_REGENERATED", actorUserId: context.actorUserId, payload: { roundId, gameId: game.id } } });
+  });
+}
+
+export async function updateSeating(roundId: string, orderedPlayerIds: string[], context: { actorUserId?: string } = {}) {
+  return prisma.$transaction(async (tx) => {
+    const game = await tx.game.findUnique({
+      where: { roundId },
+      include: {
+        round: {
+          include: { tournament: { include: { players: { select: { playerId: true } } } } },
+        },
+      },
+    });
+    if (!game) throw new Error("Тур не найден");
+    if (game.round.tournament.archivedAt || game.round.tournament.status === "FINISHED") throw new Error("Этот турнир доступен только для просмотра");
+
+    const seats = buildManualSeating(
+      game.seatingStatus,
+      orderedPlayerIds,
+      game.round.tournament.players.map(({ playerId }) => playerId),
+    );
+
+    await tx.gameSeat.deleteMany({ where: { gameId: game.id } });
+    await tx.gameSeat.createMany({ data: seats.map((seat) => ({ ...seat, gameId: game.id })) });
+    await tx.tournamentEvent.create({
+      data: {
+        tournamentId: game.round.tournamentId,
+        type: "SEATING_MANUALLY_UPDATED",
+        actorUserId: context.actorUserId,
+        payload: { roundId, gameId: game.id, seats },
+      },
+    });
   });
 }
 

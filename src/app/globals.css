@@ -175,6 +175,14 @@ details[open] > summary::after { content: "−"; }
 .round-kicker { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .seat-list li { display: grid; grid-template-columns: 36px 1fr; min-height: 42px; align-items: center; border-bottom: 1px solid var(--border); }
 .seat-number { color: var(--accent); font-weight: 850; }
+.manual-seating { margin: 12px 0; padding: 0 12px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.manual-seating > summary { display: flex; align-items: center; min-height: 46px; color: var(--accent-dark); font-weight: 850; cursor: pointer; }
+.manual-seating-form { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; padding-top: 4px; }
+.manual-seating-form label { display: grid; grid-template-columns: 68px 1fr; align-items: center; gap: 8px; }
+.manual-seating-form label span { color: var(--muted); font-size: 11px; font-weight: 800; }
+.manual-seating-form select { min-width: 0; }
+.manual-seating-form .muted, .manual-seating-form .button { grid-column: 1 / -1; }
+.manual-seating-form .muted { margin: 2px 0 0; font-size: 11px; }
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .standings-scroll { overflow-x: auto; margin: 12px -20px -20px; padding: 0 20px 20px; scrollbar-color: var(--accent) var(--accent-soft); }
 .standings-scroll table { min-width: 1050px; border-collapse: collapse; font-size: 13px; }
@@ -304,7 +312,7 @@ details[open] > summary::after { content: "−"; }
   .dashboard-stats div { min-width: 0; }
   .tournament-score { min-width: 82px; padding: 12px; }
   .round-progress li small { display: none; }
-  .players-grid, .player-list, .actions { grid-template-columns: 1fr; }
+  .players-grid, .player-list, .actions, .manual-seating-form { grid-template-columns: 1fr; }
   .actions .button { margin-top: 9px; }
   .archive-form { grid-template-columns: 1fr; }
   .archive-form .button { width: 100%; }

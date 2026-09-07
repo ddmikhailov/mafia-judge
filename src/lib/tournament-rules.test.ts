@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   assertSeatingCanBeConfirmed,
+  buildManualSeating,
   buildRegeneratedSeating,
   prepareTournament,
 } from "./tournament-rules";
@@ -38,5 +39,13 @@ describe("рассадка", () => {
     assertSeatingCanBeConfirmed("GENERATED", persisted);
     expect(() => buildRegeneratedSeating("CONFIRMED", tenIds)).toThrow(/нельзя перерандомить/);
     expect(persisted.map((seat) => seat.playerId)).toEqual(tenIds);
+  });
+
+  it("сохраняет ручной порядок игроков и отклоняет дубли", () => {
+    const reversed = [...tenIds].reverse();
+    expect(buildManualSeating("GENERATED", reversed, tenIds)).toEqual(
+      reversed.map((playerId, index) => ({ playerId, seatNumber: index + 1 })),
+    );
+    expect(() => buildManualSeating("GENERATED", [...tenIds.slice(0, 9), tenIds[0]], tenIds)).toThrow(/по одному/);
   });
 });

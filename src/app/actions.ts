@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { confirmSeating, createTournament, regenerateSeating } from "@/lib/tournament-service";
+import { confirmSeating, createTournament, regenerateSeating, updateSeating } from "@/lib/tournament-service";
 import { performGameAction, type GameCommand } from "@/lib/game-service";
 import { ROLES } from "@/lib/game-rules";
 import { closeGameScoring, finalizeTournament, overrideDrawCompensation, overrideGameScore, recordDrawLot, saveGameScoring } from "@/lib/scoring-service";
@@ -55,6 +55,21 @@ export async function confirmSeatingAction(formData: FormData) {
     await requireRoundAccess(user, roundId, tournamentId, { mutation: true });
     await confirmSeating(roundId, { actorUserId: user.id });
   } catch (error) { redirectWithError(`/tournaments/${tournamentId}`, error, "Не удалось подтвердить рассадку."); }
+  revalidatePath(`/tournaments/${tournamentId}`);
+}
+
+export async function updateSeatingAction(formData: FormData) {
+  const tournamentId = uuid.parse(formData.get("tournamentId"));
+  try {
+    const user = await requireUser();
+    const roundId = uuid.parse(formData.get("roundId"));
+    await requireRoundAccess(user, roundId, tournamentId, { mutation: true });
+    const orderedPlayerIds = formData.getAll("playerId").map((value) => uuid.parse(value));
+    if (orderedPlayerIds.length !== 10 || new Set(orderedPlayerIds).size !== 10) {
+      throw new DomainError("Распределите всех 10 игроков по одному на места 1–10", "INVALID_SEATING");
+    }
+    await updateSeating(roundId, orderedPlayerIds, { actorUserId: user.id });
+  } catch (error) { redirectWithError(`/tournaments/${tournamentId}`, error, "Не удалось сохранить рассадку."); }
   revalidatePath(`/tournaments/${tournamentId}`);
 }
 

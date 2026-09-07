@@ -6,6 +6,7 @@ import {
   drawLotAction,
   finalizeTournamentAction,
   regenerateSeatingAction,
+  updateSeatingAction,
 } from "@/app/actions";
 import { getTournamentResults } from "@/lib/scoring-service";
 import { rankTournament } from "@/lib/tournament-ranking";
@@ -72,6 +73,7 @@ export default async function TournamentPage({ params, searchParams }: { params:
       const confirmed = game?.seatingStatus === "CONFIRMED";
       return <li className={`round-card ${round.status === "COMPLETED" ? "round-completed" : isAvailable ? "round-current" : ""}`} key={round.id}><div className="round-head"><div><span className="round-kicker">Игра {round.number} из 5</span><strong>Тур {round.number}</strong></div><span className={`status ${round.status === "COMPLETED" ? "confirmed" : generated ? "ready" : ""}`}>{roundStatusLabels[round.status]}</span></div>
         {game && game.seats.length > 0 && round.status !== "COMPLETED" ? <ol className="seat-list">{game.seats.map((seat) => <li key={seat.id}><span className="seat-number">{seat.seatNumber}</span><span>{seat.player.nickname}</span></li>)}</ol> : null}
+        {isAvailable && game && generated ? <details className="manual-seating"><summary>Изменить рассадку вручную</summary><form action={updateSeatingAction} className="manual-seating-form"><input type="hidden" name="roundId" value={round.id} /><input type="hidden" name="tournamentId" value={tournament.id} />{game.seats.map((seat) => <label key={seat.seatNumber}><span>Место {seat.seatNumber}</span><select name="playerId" defaultValue={seat.playerId} aria-label={`Игрок на месте ${seat.seatNumber}`}>{tournament.players.map(({ playerId, player }) => <option value={playerId} key={playerId}>{player.nickname}</option>)}</select></label>)}<p className="muted">Каждый игрок должен быть выбран один раз.</p><PendingSubmit>Сохранить рассадку</PendingSubmit></form></details> : null}
         {isAvailable && game && !confirmed ? <div className={generated ? "actions" : ""}><form action={regenerateSeatingAction}><input type="hidden" name="roundId" value={round.id} /><input type="hidden" name="tournamentId" value={tournament.id} /><PendingSubmit className={`button ${generated ? "secondary" : ""}`}>{generated ? "Перерандомить" : `Начать тур ${round.number}`}</PendingSubmit></form>{generated ? <form action={confirmSeatingAction}><input type="hidden" name="roundId" value={round.id} /><input type="hidden" name="tournamentId" value={tournament.id} /><PendingSubmit>Подтвердить рассадку</PendingSubmit></form> : null}</div> : null}
         {confirmed && game ? <Link className="button" href={`/games/${game.id}`}>{round.status === "COMPLETED" ? "Посмотреть баллы" : round.status === "SCORING" ? "Выставить баллы" : "Открыть игру"}</Link> : null}
       </li>;

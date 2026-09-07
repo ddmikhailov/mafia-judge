@@ -59,6 +59,32 @@ export function secureShuffle<T>(values: readonly T[], nextIndex: RandomIndex = 
 
 export type SeatAssignment = { playerId: string; seatNumber: number };
 
+export function buildManualSeating(
+  seatingStatus: "PENDING" | "GENERATED" | "CONFIRMED",
+  orderedPlayerIds: readonly string[],
+  tournamentPlayerIds: readonly string[],
+): SeatAssignment[] {
+  if (seatingStatus === "CONFIRMED") {
+    throw new Error("Подтверждённую рассадку нельзя изменить");
+  }
+  if (seatingStatus !== "GENERATED") {
+    throw new Error("Сначала начните тур и сформируйте рассадку");
+  }
+
+  const selectedPlayers = new Set(orderedPlayerIds);
+  const tournamentPlayers = new Set(tournamentPlayerIds);
+  if (
+    orderedPlayerIds.length !== PLAYER_COUNT ||
+    selectedPlayers.size !== PLAYER_COUNT ||
+    tournamentPlayers.size !== PLAYER_COUNT ||
+    [...selectedPlayers].some((playerId) => !tournamentPlayers.has(playerId))
+  ) {
+    throw new Error("Распределите всех 10 игроков по одному на места 1–10");
+  }
+
+  return orderedPlayerIds.map((playerId, index) => ({ playerId, seatNumber: index + 1 }));
+}
+
 export function buildRegeneratedSeating(
   seatingStatus: "PENDING" | "GENERATED" | "CONFIRMED",
   playerIds: readonly string[],
