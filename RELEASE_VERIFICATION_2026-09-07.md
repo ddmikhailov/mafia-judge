@@ -1,12 +1,12 @@
 # Release verification — 7 сентября 2026
 
-Release candidate: the commit containing this verification record, based on `c58b451`.
+Release candidate: `v0.2.0`, based on `ff26a5a`.
 
 ## Local PostgreSQL verification
 
-- PostgreSQL 17 ran in an isolated Docker container bound only to `127.0.0.1:55437`.
+- PostgreSQL 17 ran in an isolated Docker container bound only to `127.0.0.1:55438`.
 - All five committed Prisma migrations applied successfully.
-- `npm test -- --no-file-parallelism`: 9 test files, 99/99 tests passed.
+- `npm test -- --no-file-parallelism`: 9 test files, 102/102 tests passed.
 - `npm run typecheck`: passed.
 - `npm run lint`: passed.
 - `npm run build`: passed.
@@ -34,9 +34,11 @@ Verified:
 - seating generation and confirmation;
 - confirmed seating persists after reload;
 - role assignment `1 DON + 2 MAFIA + 1 SHERIFF + 6 CIVILIAN`;
+- changing a saved role keeps the selected value immediately and after reload;
 - first-night transitions and start of day 1;
-- foul persists after reload and Undo restores the count;
-- manual winner override requires and records a reason;
+- each new phase, subphase and speaker receives a fresh stopped timer with the correct duration, including the 20-second black-triple phase;
+- two consecutive foul submissions increment the same player from 0 to 2; foul persists after reload and Undo restores the count;
+- manual winner declaration requires an explicit warning confirmation, records the actor and moves directly to scoring;
 - result confirmation transitions to SCORING;
 - base scores match the confirmed winning team;
 - closing scoring locks the game and unlocks the next round;
@@ -51,7 +53,16 @@ Five-game finalization, compensation, ranking tie-breaks and `.xlsx` contents ar
 
 - Next.js production build completed successfully.
 - Amvera Docker target `amvera-runner` built successfully with the production public URL.
+- The final Amvera image started against the isolated PostgreSQL database, applied no pending migrations and returned `{"status":"ok","database":"ok"}`.
+- Docker dependency installation uses a persistent npm cache, bounded concurrency and retry timeouts to tolerate transient registry pauses during an Amvera build.
 - No schema changes or new migrations are included in this release.
+
+## Production preflight
+
+- Scheduled database backups are enabled in Amvera.
+- Backup `ddmikhailov-cnpg-backup-mafia-judge-db-20260907150000` is ready.
+- The application has only the required runtime settings: `DATABASE_URL`, `NEXT_PUBLIC_APP_URL` and `TZ`; no bootstrap or recovery variables remain.
+- The pre-deployment production health check returned HTTP 200 with database status `ok`.
 
 ## Dependency audit
 
@@ -63,4 +74,4 @@ Five-game finalization, compensation, ranking tie-breaks and `.xlsx` contents ar
 
 Local release validation: **GO**.
 
-Production completion still requires a ready PostgreSQL backup, removal of the one-time recovery variables, successful Amvera rebuild/startup, health and security-header checks, and the owner's personal login verification without sharing the password.
+Production completion still requires a successful Amvera rebuild/startup, post-deployment health and security-header checks, and the owner's personal login verification without sharing the password.

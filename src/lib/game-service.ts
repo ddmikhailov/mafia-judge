@@ -52,6 +52,7 @@ export type GameCommand =
   | { type: "COMPLETE_FINAL_SPEECH" }
   | { type: "COMPLETE_PROTOCOL" }
   | { type: "CONFIRM_WINNER"; winner?: Winner }
+  | { type: "DECLARE_WINNER"; winner: "RED" | "BLACK" }
   | { type: "CONTINUE_MANUALLY" }
   | { type: "ADD_PENALTY"; seatNumber: number; value: number; comment?: string }
   | { type: "UNDO_PENALTY" }
@@ -606,6 +607,22 @@ async function executeGameAction(tx: Tx, gameId: string, command: GameCommand) {
       });
       await tx.round.update({ where: { id: game.roundId }, data: { status: "SCORING" } });
       await audit(tx, gameId, "GAME_FINISHED", { winner });
+      return;
+    }
+
+    if (command.type === "DECLARE_WINNER") {
+      const result = confirmResultTransition(command.winner);
+      await tx.game.update({
+        where: { id: gameId },
+        data: { ...result, finishedAt: new Date() },
+      });
+      await tx.round.update({ where: { id: game.roundId }, data: { status: "SCORING" } });
+      await audit(tx, gameId, "WINNER_DECLARED_MANUALLY", {
+        winner: command.winner,
+        previousPhase: game.phase,
+        previousSubphase: game.subphase,
+        previousPendingWinner: game.pendingWinner,
+      });
       return;
     }
 

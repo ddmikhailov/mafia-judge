@@ -10,7 +10,16 @@ FROM base AS dependencies
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
 COPY prisma.config.ts ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci \
+      --prefer-offline \
+      --no-audit \
+      --no-fund \
+      --maxsockets=5 \
+      --fetch-retries=5 \
+      --fetch-retry-mintimeout=20000 \
+      --fetch-retry-maxtimeout=120000 \
+      --fetch-timeout=600000
 
 FROM dependencies AS builder
 ARG NEXT_PUBLIC_APP_URL
@@ -20,7 +29,7 @@ COPY . .
 RUN npm run build
 
 FROM dependencies AS production-dependencies
-RUN npm prune --omit=dev
+RUN npm prune --omit=dev --no-audit --no-fund
 
 FROM dependencies AS migrator
 ENV NODE_ENV=production

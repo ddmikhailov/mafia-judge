@@ -82,6 +82,7 @@ export async function gameCommandAction(formData: FormData) {
         command = { type: intent };
         break;
       }
+      case "DECLARE_WINNER": command = { type: intent, winner: z.enum(["RED", "BLACK"]).parse(formData.get("winner")) }; break;
       case "ADD_PENALTY": command = { type: intent, seatNumber: integer.min(1).max(10).parse(formData.get("seatNumber")), value: z.coerce.number().finite().parse(formData.get("value")), comment: boundedComment.parse(String(formData.get("comment") ?? "")) || undefined }; break;
       case "MANUAL_OVERRIDE": command = { type: intent, ...validateOverride({ kind: String(formData.get("kind") ?? ""), reason: String(formData.get("reason") ?? ""), seatNumber: String(formData.get("seatNumber") ?? "") ? integer.parse(formData.get("seatNumber")) : undefined, value: String(formData.get("value") ?? "") || undefined, extra: String(formData.get("extra") ?? "") || undefined }) }; break;
       default: throw new DomainError("Неизвестное игровое действие", "UNKNOWN_COMMAND");

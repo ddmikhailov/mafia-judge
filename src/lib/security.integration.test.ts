@@ -142,6 +142,12 @@ describe.runIf(optedIn)("Stage 4 database-backed security boundaries", () => {
     await expect(performGameAction(gameId, { type: "UNDO_FOUL" })).rejects.toThrow("Нет фола");
     expect(await prisma.gameEvent.count({ where: { gameId, type: "FOUL_ADDED" } })).toBe(1);
   });
+  it("distinct foul submissions can increment the same player more than once", async () => {
+    await createSession(judge.id);
+    await gameCommandAction(form({ gameId, intent: "ADD_FOUL", seatNumber: "8", actionToken: randomUUID() }));
+    await gameCommandAction(form({ gameId, intent: "ADD_FOUL", seatNumber: "8", actionToken: randomUUID() }));
+    expect((await getGameSnapshot(gameId))!.seats[7].foulCount).toBe(2);
+  });
   it("simultaneous mutations serialize and duplicate penalty tokens apply once", async () => {
     const context = { actorUserId: judge.id, actionToken: randomUUID() };
     await Promise.all([1, 2].map(() => performGameAction(gameId, { type: "ADD_PENALTY", seatNumber: 6, value: -0.2 }, context)));
@@ -163,10 +169,10 @@ describe.runIf(optedIn)("Stage 4 database-backed security boundaries", () => {
     await setTournamentArchived(head, tournamentId, false, "Integration restore");
   });
   it("accelerated game reaches SCORING and duplicate scoring close is safe", async () => {
-    await createSession(head.id);
-    await gameCommandAction(form({ gameId, intent: "MANUAL_OVERRIDE", kind: "WINNER", value: "RED", reason: "Accelerated integration finish", actionToken: randomUUID() }));
-    await gameCommandAction(form({ gameId, intent: "CONFIRM_WINNER" }));
+    await createSession(judge.id);
+    await gameCommandAction(form({ gameId, intent: "DECLARE_WINNER", winner: "RED", actionToken: randomUUID() }));
     expect((await getGameSnapshot(gameId))!.status).toBe("SCORING");
+    expect(await prisma.gameEvent.findFirst({ where: { gameId, type: "WINNER_DECLARED_MANUALLY", actorUserId: judge.id } })).not.toBeNull();
     const game = await getGameScoringSnapshot(gameId);
     const inputs = game.seats.map(seat => ({ gameSeatId: seat.id, judgeAdditionalPoints: "0" }));
     const context = { actorUserId: head.id, actionToken: randomUUID() };

@@ -41,7 +41,8 @@ function TimerForGame({ game }: { game: NonNullable<Awaited<ReturnType<typeof ge
     if (speaker?.speechRestrictionPending) duration = game.seats.filter((seat) => seat.status === "ACTIVE").length <= 4 ? 30 : 10;
   }
   if (!duration) return null;
-  return <GameTimer duration={duration} timerKey={`${game.id}:${game.subphase}:${game.dayNumber}:${game.nightNumber}:${game.currentSpeakerSeat ?? 0}`} />;
+  const timerKey = `${game.id}:${game.subphase}:${game.dayNumber}:${game.nightNumber}:${game.currentSpeakerSeat ?? 0}`;
+  return <GameTimer key={timerKey} duration={duration} timerKey={timerKey} />;
 }
 
 function formatScore(value: { toString(): string } | string | number) {
@@ -56,7 +57,7 @@ async function ScoringScreen({ gameId, error, user }: { gameId: string; error?: 
   const scoreBySeat = new Map(game.scores.map((score) => [score.gameSeatId, score]));
   return <main className="page game-page">
     <div className="game-topline"><Link href={`/tournaments/${game.round.tournamentId}`}>← Турнир</Link><ConnectionStatus gameId={game.id} snapshot={JSON.stringify({ phase: game.phase, status: game.status, scores: game.scores.map((score) => [score.gameSeatId, score.judgeAdditionalPoints.toString()]) })} /></div>
-    <p className="eyebrow">Тур {game.round.number} · {locked ? "закрыт" : "scoring"}</p>
+    <p className="eyebrow">Тур {game.round.number} · {locked ? "игра закрыта" : "подсчёт баллов"}</p>
     <p className="assigned-judges">Судьи: {game.round.tournament.judges.map(({ user: judge }) => judge.displayName).join(", ") || "не назначены"}</p>
     <h1>{locked ? "Баллы игры" : "Выставление баллов"}</h1>
     <p className="lead">Основной балл, ТЧ и штрафы рассчитаны автоматически. КБ появятся после пятого тура.</p>
@@ -120,7 +121,7 @@ export default async function GamePage({ params, searchParams }: { params: Promi
       <p className="lead">Выберите Дона, двух Мафий и Шерифа. Остальные места остаются мирными.</p>
       {error ? <p className="error">{error}</p> : null}
       <div className="role-list">
-        {game.seats.map((seat) => <CommandForm gameId={game.id} intent="ASSIGN_ROLE" className="role-row" key={seat.id}>
+        {game.seats.map((seat) => <CommandForm gameId={game.id} intent="ASSIGN_ROLE" className="role-row" key={`${seat.id}:${seat.role ?? "CIVILIAN"}`}>
           <input type="hidden" name="seatNumber" value={seat.seatNumber} />
           <span><b>№{seat.seatNumber}</b> {seat.player.nickname}</span>
           <select name="role" defaultValue={seat.role ?? "CIVILIAN"}>{Object.entries(roleLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
@@ -145,7 +146,7 @@ export default async function GamePage({ params, searchParams }: { params: Promi
 
     <>
       <section className="judge-seats">
-        {game.seats.map((seat) => <article className={`judge-seat ${seat.status === "ELIMINATED" ? "eliminated" : ""} ${seat.seatNumber === game.currentSpeakerSeat ? "current" : ""}`} key={seat.id}>
+        {game.seats.map((seat) => <article className={`judge-seat fouls-${Math.min(seat.foulCount, 4)} ${seat.status === "ELIMINATED" ? "eliminated" : ""} ${seat.seatNumber === game.currentSpeakerSeat ? "current" : ""}`} key={seat.id}>
           <div className="seat-title"><b>№{seat.seatNumber}</b><span>{seat.player.nickname}</span><em>{seat.status === "ACTIVE" ? "В игре" : "Выбыл"}</em></div>
           <div className="seat-meta"><span>Фолы: <b>{seat.foulCount}</b></span><details><summary>Роль скрыта</summary><span>{seat.role ? roleLabels[seat.role] : "Не назначена"}</span></details></div>
           {seat.status === "ACTIVE" ? <CommandForm gameId={game.id} intent="ADD_FOUL"><input type="hidden" name="seatNumber" value={seat.seatNumber} /><button className="quick-button" type="submit">+ Фол</button></CommandForm> : null}
@@ -161,7 +162,7 @@ export default async function GamePage({ params, searchParams }: { params: Promi
           <p>Текущий игрок: <b>№{current.seatNumber} {current.player.nickname}</b>{current.speechRestrictionPending ? " · ограниченная речь" : ""}</p>
           <CommandForm gameId={game.id} intent="ADD_NOMINATION" className="inline-form"><select name="nomineeSeat" aria-label="Кандидатура">{active.map((seat) => <option key={seat.id} value={seat.seatNumber}>№{seat.seatNumber} {seat.player.nickname}</option>)}</select><button type="submit">Выставить</button></CommandForm>
           {activeNominations.length ? <div className="nomination-list">Выставлены: {activeNominations.map((item) => `№${item.nomineeSeat}`).join(", ")}</div> : null}
-          <div className="actions">{activeNominations.length ? <CommandForm gameId={game.id} intent="UNDO_NOMINATION"><button className="button secondary" type="submit">Undo выставления</button></CommandForm> : <span />}
+          <div className="actions">{activeNominations.length ? <CommandForm gameId={game.id} intent="UNDO_NOMINATION"><button className="button secondary" type="submit">Отменить выставление</button></CommandForm> : <span />}
           <CommandForm gameId={game.id} intent="COMPLETE_SPEECH"><button className="button" type="submit">Завершить речь</button></CommandForm></div>
         </> : null}
 
@@ -185,16 +186,31 @@ export default async function GamePage({ params, searchParams }: { params: Promi
         {game.phase === "FINAL_SPEECH" ? <CommandForm gameId={game.id} intent="COMPLETE_FINAL_SPEECH"><button className="button" type="submit">К протоколу</button></CommandForm> : null}
         {game.phase === "PROTOCOL" ? <CommandForm gameId={game.id} intent="COMPLETE_PROTOCOL"><button className="button" type="submit">Завершить протокол</button></CommandForm> : null}
         {game.phase === "RESULT_CONFIRMATION" && !game.pendingWinner && canDangerousOverride(user) ? <p className="muted">Установите результат через ручную корректировку с обязательной причиной.</p> : null}
-        {game.nightActions.some((action) => !action.undoneAt) && game.phase === "NIGHT" ? <CommandForm gameId={game.id} intent="UNDO_NIGHT_ACTION"><button className="undo-button" type="submit">Undo ночного действия</button></CommandForm> : null}
-        {game.voteSessions.some((session) => session.status === "COMPLETED") && ["FINAL_SPEECH", "CAR_CRASH"].includes(game.phase) ? <CommandForm gameId={game.id} intent="UNDO_VOTE"><button className="undo-button" type="submit">Undo голосования</button></CommandForm> : null}
+        {game.nightActions.some((action) => !action.undoneAt) && game.phase === "NIGHT" ? <CommandForm gameId={game.id} intent="UNDO_NIGHT_ACTION"><button className="undo-button" type="submit">Отменить ночное действие</button></CommandForm> : null}
+        {game.voteSessions.some((session) => session.status === "COMPLETED") && ["FINAL_SPEECH", "CAR_CRASH"].includes(game.phase) ? <CommandForm gameId={game.id} intent="UNDO_VOTE"><button className="undo-button" type="submit">Отменить голосование</button></CommandForm> : null}
       </section>
     </>
 
+    <details className="card manual-winner">
+      <summary>Завершить игру вручную</summary>
+      <p className="muted">Используйте, если результат нужно зафиксировать до автоматического определения победителя.</p>
+      <div className="actions">
+        <CommandForm gameId={game.id} intent="DECLARE_WINNER" confirmMessage="Объявить победу красных и перейти к выставлению баллов? Текущая игровая фаза будет завершена, а действие сохранится в истории.">
+          <input type="hidden" name="winner" value="RED" />
+          <button className="button danger" type="submit">Победа красных</button>
+        </CommandForm>
+        <CommandForm gameId={game.id} intent="DECLARE_WINNER" confirmMessage="Объявить победу чёрных и перейти к выставлению баллов? Текущая игровая фаза будет завершена, а действие сохранится в истории.">
+          <input type="hidden" name="winner" value="BLACK" />
+          <button className="button danger" type="submit">Победа чёрных</button>
+        </CommandForm>
+      </div>
+    </details>
+
     <details className="card tools"><summary>⋯ Дополнительные действия</summary>
       <h3>Штраф</h3><CommandForm gameId={game.id} intent="ADD_PENALTY" className="stack-form"><select name="seatNumber">{game.seats.map((seat) => <option key={seat.id} value={seat.seatNumber}>№{seat.seatNumber} {seat.player.nickname}</option>)}</select><select name="value">{[-0.2, -0.4, -0.5, -0.7, -1.2, -1.6].map((value) => <option key={value} value={value}>{value}</option>)}</select><input name="comment" placeholder="Комментарий (необязательно)" /><button type="submit">Добавить штраф</button></CommandForm>
-      {game.penalties.some((penalty) => !penalty.undoneAt) ? <CommandForm gameId={game.id} intent="UNDO_PENALTY"><button className="undo-button" type="submit">Undo штрафа</button></CommandForm> : null}
-      {canDangerousOverride(user) ? <><h3>Ручная корректировка</h3><CommandForm gameId={game.id} intent="MANUAL_OVERRIDE" className="stack-form"><select name="kind"><option value="FOUL">Число фолов</option><option value="ROLE">Роль</option><option value="STATUS">Выбыл / восстановить</option><option value="PHASE">Phase / subphase</option><option value="WINNER">Победитель / ничья</option><option value="CANCEL_VOTE">Отменить голосование</option><option value="PENALTY">Custom penalty</option></select><select name="seatNumber"><option value="">Без игрока</option>{game.seats.map((seat) => <option key={seat.id} value={seat.seatNumber}>№{seat.seatNumber} {seat.player.nickname}</option>)}</select><input name="value" placeholder="Новое значение" /><input name="extra" maxLength={500} placeholder="Subphase / комментарий" /><input name="reason" maxLength={500} placeholder="Причина (обязательно)" required /><button type="submit">Применить корректировку</button></CommandForm></> : null}
-      <h3>Audit</h3><ol className="audit-list">{game.events.slice(0, 20).map((event) => <li key={event.id}><b>{event.type}</b><time>{event.createdAt.toLocaleTimeString("ru-RU")}</time>{event.overrideReason ? <small>{event.overrideReason}</small> : null}</li>)}</ol>
+      {game.penalties.some((penalty) => !penalty.undoneAt) ? <CommandForm gameId={game.id} intent="UNDO_PENALTY"><button className="undo-button" type="submit">Отменить штраф</button></CommandForm> : null}
+      {canDangerousOverride(user) ? <><h3>Ручная корректировка</h3><CommandForm gameId={game.id} intent="MANUAL_OVERRIDE" className="stack-form"><select name="kind" aria-label="Тип корректировки"><option value="FOUL">Число фолов</option><option value="ROLE">Роль</option><option value="STATUS">Выбыл / восстановить</option><option value="PHASE">Этап и подэтап игры</option><option value="WINNER">Победитель / ничья</option><option value="CANCEL_VOTE">Отменить голосование</option><option value="PENALTY">Произвольный штраф</option></select><select name="seatNumber" aria-label="Игрок"><option value="">Без игрока</option>{game.seats.map((seat) => <option key={seat.id} value={seat.seatNumber}>№{seat.seatNumber} {seat.player.nickname}</option>)}</select><input name="value" placeholder="Новое значение" /><input name="extra" maxLength={500} placeholder="Подэтап или комментарий" /><input name="reason" maxLength={500} placeholder="Причина (обязательно)" required /><button type="submit">Применить корректировку</button></CommandForm></> : null}
+      <h3>История действий</h3><ol className="audit-list">{game.events.slice(0, 20).map((event) => <li key={event.id}><b>{event.type}</b><time>{event.createdAt.toLocaleTimeString("ru-RU")}</time>{event.overrideReason ? <small>{event.overrideReason}</small> : null}</li>)}</ol>
     </details>
   </main>;
 }
