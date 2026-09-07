@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import packageJson from "../../../../package.json";
 
 export const dynamic = "force-dynamic";
 
@@ -6,7 +7,7 @@ export async function GET() {
   try {
     await prisma.$queryRaw`SELECT 1`;
     return Response.json(
-      { status: "ok", database: "ok" },
+      { status: "ok", database: "ok", version: packageJson.version },
       { status: 200, headers: { "Cache-Control": "no-store" } },
     );
   } catch {

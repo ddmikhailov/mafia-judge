@@ -51,7 +51,7 @@ export type GameCommand =
   | { type: "SKIP_BLACK_TRIPLE" }
   | { type: "UNDO_NIGHT_ACTION" }
   | { type: "COMPLETE_FINAL_SPEECH" }
-  | { type: "SAVE_PROTOCOL"; marks: Array<{ seatNumber: number; mark: ProtocolMark }>; note?: string; complete: boolean }
+  | { type: "SAVE_PROTOCOL"; speakerSeat: number; marks: Array<{ seatNumber: number; mark: ProtocolMark }>; note?: string; complete: boolean }
   | { type: "COMPLETE_PROTOCOL" }
   | { type: "CONFIRM_WINNER"; winner?: Winner }
   | { type: "DECLARE_WINNER"; winner: "RED" | "BLACK" }
@@ -598,10 +598,11 @@ async function executeGameAction(tx: Tx, gameId: string, command: GameCommand) {
     }
 
     if (command.type === "SAVE_PROTOCOL") {
-      if (game.phase !== "PROTOCOL" || game.currentSpeakerSeat === null) throw new Error("Сейчас не протокол");
+      if (game.phase !== "PROTOCOL") throw new Error("Сейчас не протокол");
+      if (!game.seats.some(({ seatNumber }) => seatNumber === command.speakerSeat)) throw new Error("Игрок протокола не найден");
       const record = validateProtocolRecord(command, game.seats.map(({ seatNumber }) => seatNumber));
       await audit(tx, gameId, "PROTOCOL_SAVED", {
-        speakerSeat: game.currentSpeakerSeat,
+        speakerSeat: command.speakerSeat,
         marks: record.marks,
         note: record.note ?? null,
       });

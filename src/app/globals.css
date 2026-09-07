@@ -254,7 +254,8 @@ details[open] > summary::after { content: "−"; }
 .triple-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
 .check-result { margin-top: 10px; padding: 11px; border-radius: 11px; background: var(--text); color: #fff; }
 .check-result summary { display: flex; align-items: center; min-height: 36px; cursor: pointer; }
-.protocol-panel > .muted { margin: 0 0 10px; }
+.protocol-card { border-color: rgba(125,39,96,.48); box-shadow: 0 8px 24px rgba(125,39,96,.12); }
+.protocol-card > .muted { margin: 7px 0 10px; }
 .protocol-list { display: grid; gap: 5px; }
 .protocol-player { display: grid; gap: 6px; padding: 9px 0; border-bottom: 1px solid var(--border); }
 .protocol-player > b { display: flex; gap: 7px; color: var(--accent); font-size: 13px; }

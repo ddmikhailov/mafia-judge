@@ -116,9 +116,10 @@ export default async function GamePage({ params, searchParams }: { params: Promi
   if (game.phase === "SCORING" || game.status === "COMPLETED") return <ScoringScreen gameId={game.id} error={error} user={user} />;
   const active = game.seats.filter((seat) => seat.status === "ACTIVE");
   const current = game.seats.find((seat) => seat.seatNumber === game.currentSpeakerSeat);
+  const protocolSpeaker = current ?? game.seats.find((seat) => game.pendingExitSeats.includes(seat.seatNumber)) ?? game.seats.find((seat) => seat.status === "ELIMINATED") ?? game.seats[0];
   const openVote = game.voteSessions.find((session) => session.status === "OPEN");
   const activeNominations = game.nominations.filter((item) => item.dayNumber === game.dayNumber && item.status === "ACTIVE");
-  const protocolEvent = current ? game.events.find((event) => event.type === "PROTOCOL_SAVED" && (event.payload as ProtocolPayload).speakerSeat === current.seatNumber) : undefined;
+  const protocolEvent = protocolSpeaker ? game.events.find((event) => event.type === "PROTOCOL_SAVED" && (event.payload as ProtocolPayload).speakerSeat === protocolSpeaker.seatNumber) : undefined;
   const protocolRecord = protocolEvent?.payload as ProtocolPayload | undefined;
   const protocolMarks = new Map((protocolRecord?.marks ?? []).map(({ seatNumber, mark }) => [seatNumber, mark]));
   const snapshot = JSON.stringify({ phase: game.phase, subphase: game.subphase, day: game.dayNumber, night: game.nightNumber, seats: game.seats.map((seat) => [seat.seatNumber, seat.status, seat.foulCount]) });
@@ -154,6 +155,14 @@ export default async function GamePage({ params, searchParams }: { params: Promi
 
     {error ? <p className="error card">{error}</p> : null}
     {game.pendingWinner && game.phase === "RESULT_CONFIRMATION" ? <section className="winner-banner"><b>Система определила {winnerLabels[game.pendingWinner]}</b><div className="actions"><CommandForm gameId={game.id} intent="CONFIRM_WINNER"><button className="button" type="submit">Подтвердить</button></CommandForm>{canDangerousOverride(user) ? <CommandForm gameId={game.id} intent="CONTINUE_MANUALLY"><button className="button secondary" type="submit">Продолжить вручную</button></CommandForm> : null}</div></section> : null}
+
+    {game.phase === "PROTOCOL" && protocolSpeaker ? <section className="card protocol-card"><h2>Протокол игрока №{protocolSpeaker.seatNumber}</h2><p className="muted">{protocolSpeaker.player.nickname}: отметьте озвученные роли и цвета.</p><CommandForm gameId={game.id} intent="SAVE_PROTOCOL" className="protocol-form" key={`${protocolSpeaker.id}:${protocolEvent?.id ?? "new"}`}>
+      <input type="hidden" name="speakerSeat" value={protocolSpeaker.seatNumber} />
+      <div className="protocol-list">{game.seats.map((seat) => <div className="protocol-player" key={seat.id}><b>№{seat.seatNumber} <span>{seat.player.nickname}</span></b><div className="protocol-options">{protocolMarkOptions.map((option) => <label className={`protocol-option ${option.className}`} key={option.value || "none"}><input type="radio" name={`mark-${seat.seatNumber}`} value={option.value} defaultChecked={(protocolMarks.get(seat.seatNumber) ?? "") === option.value} /><span>{option.label}</span></label>)}</div></div>)}</div>
+      <label className="protocol-note">Дополнительная информация<textarea name="note" maxLength={500} rows={3} defaultValue={protocolRecord?.note ?? ""} placeholder="Например: версия игры или важное замечание" /></label>
+      {protocolEvent ? <p className="protocol-saved">Отметки сохранены</p> : null}
+      <div className="actions"><button className="button secondary" type="submit">Сохранить</button><button className="button" type="submit" name="complete" value="true">Сохранить и завершить</button></div>
+    </CommandForm></section> : null}
 
     <>
       <section className="judge-seats">
@@ -195,12 +204,6 @@ export default async function GamePage({ params, searchParams }: { params: Promi
         {game.subphase === "BLACK_TRIPLE" ? <><CommandForm gameId={game.id} intent="BLACK_TRIPLE"><div className="triple-grid">{[0, 1, 2].map((index) => <select name="selectedSeats" aria-label={`ТЧ место ${index + 1}`} key={index}>{game.seats.map((seat) => <option key={seat.id} value={seat.seatNumber}>№{seat.seatNumber}</option>)}</select>)}</div><button className="button" type="submit">Подтвердить ТЧ</button></CommandForm><CommandForm gameId={game.id} intent="SKIP_BLACK_TRIPLE"><button className="button secondary" type="submit">Без ТЧ</button></CommandForm></> : null}
 
         {game.phase === "FINAL_SPEECH" ? <CommandForm gameId={game.id} intent="COMPLETE_FINAL_SPEECH"><button className="button" type="submit">К протоколу</button></CommandForm> : null}
-        {game.phase === "PROTOCOL" && current ? <div className="protocol-panel"><p className="muted">Отметьте, кем игрок №{current.seatNumber} оставляет участников.</p><CommandForm gameId={game.id} intent="SAVE_PROTOCOL" className="protocol-form" key={`${current.id}:${protocolEvent?.id ?? "new"}`}>
-          <div className="protocol-list">{game.seats.map((seat) => <div className="protocol-player" key={seat.id}><b>№{seat.seatNumber} <span>{seat.player.nickname}</span></b><div className="protocol-options">{protocolMarkOptions.map((option) => <label className={`protocol-option ${option.className}`} key={option.value || "none"}><input type="radio" name={`mark-${seat.seatNumber}`} value={option.value} defaultChecked={(protocolMarks.get(seat.seatNumber) ?? "") === option.value} /><span>{option.label}</span></label>)}</div></div>)}</div>
-          <label className="protocol-note">Дополнительная информация<textarea name="note" maxLength={500} rows={3} defaultValue={protocolRecord?.note ?? ""} placeholder="Например: версия игры или важное замечание" /></label>
-          {protocolEvent ? <p className="protocol-saved">Отметки сохранены</p> : null}
-          <div className="actions"><button className="button secondary" type="submit">Сохранить</button><button className="button" type="submit" name="complete" value="true">Сохранить и завершить</button></div>
-        </CommandForm></div> : null}
         {game.phase === "RESULT_CONFIRMATION" && !game.pendingWinner && canDangerousOverride(user) ? <p className="muted">Установите результат через ручную корректировку с обязательной причиной.</p> : null}
         {game.nightActions.some((action) => !action.undoneAt) && game.phase === "NIGHT" ? <CommandForm gameId={game.id} intent="UNDO_NIGHT_ACTION"><button className="undo-button" type="submit">Отменить ночное действие</button></CommandForm> : null}
         {game.voteSessions.some((session) => session.status === "COMPLETED") && ["FINAL_SPEECH", "CAR_CRASH"].includes(game.phase) ? <CommandForm gameId={game.id} intent="UNDO_VOTE"><button className="undo-button" type="submit">Отменить голосование</button></CommandForm> : null}
