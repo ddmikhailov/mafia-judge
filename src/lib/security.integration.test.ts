@@ -148,6 +148,19 @@ describe.runIf(optedIn)("Stage 4 database-backed security boundaries", () => {
     await gameCommandAction(form({ gameId, intent: "ADD_FOUL", seatNumber: "8", actionToken: randomUUID() }));
     expect((await getGameSnapshot(gameId))!.seats[7].foulCount).toBe(2);
   });
+  it("a player skipping speech after the third foul can still nominate", async () => {
+    const game = await getGameSnapshot(gameId);
+    const speakerSeat = game!.currentSpeakerSeat!;
+    const speaker = game!.seats.find((seat) => seat.seatNumber === speakerSeat)!;
+    const nominee = game!.seats.find((seat) => seat.seatNumber !== speakerSeat && seat.status === "ACTIVE")!;
+    await prisma.gameSeat.update({ where: { id: speaker.id }, data: { foulCount: 3, speechRestrictionPending: true } });
+
+    await performGameAction(gameId, { type: "ADD_NOMINATION", nomineeSeat: nominee.seatNumber });
+
+    expect(await prisma.nomination.findFirst({
+      where: { gameId, nominatorSeat: speakerSeat, nomineeSeat: nominee.seatNumber, status: "ACTIVE" },
+    })).not.toBeNull();
+  });
   it("simultaneous mutations serialize and duplicate penalty tokens apply once", async () => {
     const context = { actorUserId: judge.id, actionToken: randomUUID() };
     await Promise.all([1, 2].map(() => performGameAction(gameId, { type: "ADD_PENALTY", seatNumber: 6, value: -0.2 }, context)));

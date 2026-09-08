@@ -257,7 +257,12 @@ details[open] > summary::after { content: "−"; }
 .crash-participants { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 12px; border-radius: 11px; background: var(--accent-soft); }
 .crash-participants span { color: var(--muted); font-size: 11px; font-weight: 750; }
 .crash-participants b { color: var(--accent-dark); }
-.triple-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+.triple-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 10px 0; }
+.triple-seat { position: relative; min-height: 52px; border: 1px solid var(--border); border-radius: 12px; background: #fff; color: var(--text); font-family: var(--display); font-size: 20px; font-weight: 800; cursor: pointer; }
+.triple-seat:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
+.triple-seat[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: #fff; }
+.triple-seat:disabled:not([aria-pressed="true"]) { cursor: not-allowed; opacity: .38; }
+.triple-seat small { position: absolute; top: 4px; right: 6px; font-family: var(--body); font-size: 9px; }
 .night-history { margin-top: 12px; padding-block: 10px; background: var(--text); color: #fff; }
 .night-history summary { display: flex; align-items: center; min-height: 36px; cursor: pointer; font-weight: 850; }
 .night-history ol { display: grid; gap: 7px; margin: 8px 0 0; padding: 0; list-style: none; }

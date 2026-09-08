@@ -355,8 +355,6 @@ async function executeGameAction(tx: Tx, gameId: string, command: GameCommand) {
 
     if (command.type === "ADD_NOMINATION") {
       if (game.phase !== "DAY" || game.currentSpeakerSeat === null) throw new Error("Выставление доступно только во время речи");
-      const speaker = game.seats.find((seat) => seat.seatNumber === game.currentSpeakerSeat);
-      if (speaker?.speechRestrictionPending) throw new DomainError("Игрок с тремя фолами пропускает эту речь и не может выставлять кандидатуру", "SPEECH_RESTRICTED");
       const target = game.seats.find((seat) => seat.seatNumber === command.nomineeSeat);
       if (!target || target.status !== "ACTIVE") throw new Error("Кандидат должен быть активен");
       const existing = game.nominations.filter((item) => item.dayNumber === game.dayNumber && item.status === "ACTIVE");

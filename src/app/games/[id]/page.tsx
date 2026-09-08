@@ -5,6 +5,7 @@ import { ConnectionStatus } from "@/components/connection-status";
 import { GameTimer } from "@/components/game-timer";
 import { CommandForm } from "@/components/command-form";
 import { PendingSubmit } from "@/components/pending-submit";
+import { BlackTriplePicker } from "@/components/black-triple-picker";
 import { getGameSnapshot } from "@/lib/game-service";
 import { validateRoleComposition } from "@/lib/game-rules";
 import { allowedJudgeAdditional } from "@/lib/scoring-rules";
@@ -194,7 +195,8 @@ export default async function GamePage({ params, searchParams }: { params: Promi
 
         {game.phase === "DAY" && current ? <>
           <p>Текущий игрок: <b>№{current.seatNumber} {current.player.nickname}</b></p>
-          {current.speechRestrictionPending ? <div className="speech-restriction" role="status"><b>Игрок пропускает речь из-за трёх фолов</b><p>Таймер и выставление недоступны только на эту дневную фазу.</p></div> : <CommandForm gameId={game.id} intent="ADD_NOMINATION" className="inline-form"><select name="nomineeSeat" aria-label="Место кандидата">{active.map((seat) => <option key={seat.id} value={seat.seatNumber}>{seat.seatNumber}</option>)}</select><button type="submit">Выставить</button></CommandForm>}
+          {current.speechRestrictionPending ? <div className="speech-restriction" role="status"><b>Игрок пропускает речь из-за трёх фолов</b><p>Таймер не выдаётся, но кандидатуру выставить можно.</p></div> : null}
+          <CommandForm gameId={game.id} intent="ADD_NOMINATION" className="inline-form"><select name="nomineeSeat" aria-label="Место кандидата">{active.map((seat) => <option key={seat.id} value={seat.seatNumber}>{seat.seatNumber}</option>)}</select><button type="submit">Выставить</button></CommandForm>
           {activeNominations.length ? <div className="nomination-list">Выставлены: {activeNominations.map((item) => item.nomineeSeat).join(", ")}</div> : null}
           <div className="actions">{activeNominations.length ? <CommandForm gameId={game.id} intent="UNDO_NOMINATION"><button className="button secondary" type="submit">Отменить выставление</button></CommandForm> : <span />}
           <CommandForm gameId={game.id} intent="COMPLETE_SPEECH"><button className="button" type="submit">{current.speechRestrictionPending ? "Речь пропущена" : "Завершить речь"}</button></CommandForm></div>
@@ -214,7 +216,7 @@ export default async function GamePage({ params, searchParams }: { params: Promi
 
         {game.subphase === "DON_CHECK" || game.subphase === "SHERIFF_CHECK" ? <CommandForm gameId={game.id} intent={game.subphase} className="inline-form"><select name="targetSeat" aria-label="Цель проверки">{game.seats.map((seat) => <option key={seat.id} value={seat.seatNumber}>№{seat.seatNumber} {seat.player.nickname}{seat.status === "ELIMINATED" ? " · выбыл" : ""}</option>)}</select><button type="submit">Проверить</button></CommandForm> : null}
 
-        {game.subphase === "BLACK_TRIPLE" ? <><CommandForm gameId={game.id} intent="BLACK_TRIPLE"><div className="triple-grid">{[0, 1, 2].map((index) => <select name="selectedSeats" aria-label={`ТЧ место ${index + 1}`} key={index}>{game.seats.map((seat) => <option key={seat.id} value={seat.seatNumber}>№{seat.seatNumber}</option>)}</select>)}</div><button className="button" type="submit">Подтвердить ТЧ</button></CommandForm><CommandForm gameId={game.id} intent="SKIP_BLACK_TRIPLE"><button className="button secondary" type="submit">Без ТЧ</button></CommandForm></> : null}
+        {game.subphase === "BLACK_TRIPLE" ? <><CommandForm gameId={game.id} intent="BLACK_TRIPLE"><BlackTriplePicker seatNumbers={game.seats.map((seat) => seat.seatNumber)} /></CommandForm><CommandForm gameId={game.id} intent="SKIP_BLACK_TRIPLE"><button className="button secondary" type="submit">Без ТЧ</button></CommandForm></> : null}
 
         {game.phase === "FINAL_SPEECH" ? <CommandForm gameId={game.id} intent="COMPLETE_FINAL_SPEECH"><button className="button" type="submit">К протоколу</button></CommandForm> : null}
         {game.phase === "RESULT_CONFIRMATION" && !game.pendingWinner && canDangerousOverride(user) ? <p className="muted">Установите результат через ручную корректировку с обязательной причиной.</p> : null}
