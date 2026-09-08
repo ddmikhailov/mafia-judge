@@ -78,12 +78,8 @@ export function calculateVoteOutcome(
   }
   const votes = enteredVotes.map((value) => value ?? 0);
   if (votes.some((value) => !Number.isInteger(value) || value < 0)) throw new Error("Голоса должны быть целыми");
-  const lastIndex = votes.length - 1;
-  if (enteredVotes[lastIndex] === null) {
-    votes[lastIndex] = activePlayers - votes.slice(0, -1).reduce((sum, value) => sum + value, 0);
-  }
-  if (votes.some((value) => value < 0) || votes.reduce((sum, value) => sum + value, 0) > activePlayers) {
-    throw new Error("Сумма голосов превышает число активных игроков");
+  if (votes.reduce((sum, value) => sum + value, 0) !== activePlayers) {
+    throw new Error("Проверьте голосование: сумма голосов должна быть равна числу живых игроков");
   }
   const totals = Object.fromEntries(candidateSeats.map((seat, index) => [seat, votes[index]]));
   const maxVotes = Math.max(...votes);

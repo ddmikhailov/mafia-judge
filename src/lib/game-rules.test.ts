@@ -43,8 +43,12 @@ describe("день и фолы", () => {
 });
 
 describe("голосование и автокатастрофа", () => {
-  it("определяет единственного победителя голосования", () => expect(calculateVoteOutcome([2, 5], [6, null], 10)).toMatchObject({ kind: "WINNER", seatNumber: 2 }));
+  it("определяет единственного победителя голосования", () => expect(calculateVoteOutcome([2, 5], [6, 4], 10)).toMatchObject({ kind: "WINNER", seatNumber: 2 }));
   it("равный максимум создаёт tie", () => expect(calculateVoteOutcome([2, 5], [5, 5], 10)).toMatchObject({ kind: "TIE", seats: [2, 5] }));
+  it("требует распределить голоса всех живых игроков", () => {
+    expect(() => calculateVoteOutcome([2, 5], [5, 0], 10)).toThrow("сумма голосов");
+    expect(() => calculateVoteOutcome([2, 5], [8, 3], 10)).toThrow("сумма голосов");
+  });
   it("уменьшенный tie создаёт новую автокатастрофу", () => expect(repeatedTieTransition([2, 5, 8], [2, 5], 8)).toBe("NEXT_CAR_CRASH"));
   it("повтор того же tie ведёт к group exit", () => expect(repeatedTieTransition([2, 5], [2, 5], 8)).toBe("GROUP_EXIT"));
 });

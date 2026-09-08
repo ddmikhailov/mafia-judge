@@ -186,7 +186,17 @@ describe.runIf(optedIn)("Stage 4 database-backed security boundaries", () => {
     expect((await getGameSnapshot(gameId))!.status).toBe("SCORING");
     expect(await prisma.gameEvent.findFirst({ where: { gameId, type: "WINNER_DECLARED_MANUALLY", actorUserId: judge.id } })).not.toBeNull();
     const game = await getGameScoringSnapshot(gameId);
-    const inputs = game.seats.map(seat => ({ gameSeatId: seat.id, judgeAdditionalPoints: "0" }));
+    const inputs = game.seats.map((seat, index) => ({ gameSeatId: seat.id, judgeAdditionalPoints: index === 0 ? "0.2" : "0" }));
+    const scoringForm = new FormData();
+    scoringForm.set("gameId", gameId);
+    scoringForm.set("intent", "SAVE");
+    for (const input of inputs) {
+      scoringForm.append("gameSeatId", input.gameSeatId);
+      scoringForm.append("judgeAdditionalPoints", input.judgeAdditionalPoints);
+    }
+    await expect(gameScoringAction(scoringForm)).rejects.toThrow(`REDIRECT:/games/${gameId}?saved=1`);
+    const saved = await getGameScoringSnapshot(gameId);
+    expect(saved.scores.find((score) => score.gameSeatId === inputs[0].gameSeatId)?.judgeAdditionalPoints.toString()).toBe("0.2");
     const context = { actorUserId: head.id, actionToken: randomUUID() };
     await closeGameScoring(gameId, inputs, false, context);
     await closeGameScoring(gameId, inputs, false, context);

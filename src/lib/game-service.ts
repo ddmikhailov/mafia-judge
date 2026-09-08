@@ -27,6 +27,7 @@ import {
 import { assertCommandAllowed, assertPendingWinnerConfirmation, HIGH_RISK_IDEMPOTENT_COMMANDS } from "@/lib/game-command-policy";
 import { assertPhasePair, validateOverride } from "@/lib/manual-override";
 import { validateProtocolRecord, type ProtocolMark } from "@/lib/protocol";
+import { DomainError } from "@/lib/errors";
 
 type Tx = Prisma.TransactionClient;
 const STALE_UNDO = "Состояние игры изменилось после этого действия. Используйте ручную корректировку.";
@@ -354,6 +355,8 @@ async function executeGameAction(tx: Tx, gameId: string, command: GameCommand) {
 
     if (command.type === "ADD_NOMINATION") {
       if (game.phase !== "DAY" || game.currentSpeakerSeat === null) throw new Error("Выставление доступно только во время речи");
+      const speaker = game.seats.find((seat) => seat.seatNumber === game.currentSpeakerSeat);
+      if (speaker?.speechRestrictionPending) throw new DomainError("Игрок с тремя фолами пропускает эту речь и не может выставлять кандидатуру", "SPEECH_RESTRICTED");
       const target = game.seats.find((seat) => seat.seatNumber === command.nomineeSeat);
       if (!target || target.status !== "ACTIVE") throw new Error("Кандидат должен быть активен");
       const existing = game.nominations.filter((item) => item.dayNumber === game.dayNumber && item.status === "ACTIVE");
@@ -385,7 +388,11 @@ async function executeGameAction(tx: Tx, gameId: string, command: GameCommand) {
       if (game.phase !== "VOTING" || !["PRIMARY", "REVOTE"].includes(game.subphase)) throw new Error("Сейчас нет голосования");
       const session = game.voteSessions.find((item) => item.status === "OPEN");
       if (!session) throw new Error("Сессия голосования не найдена");
-      const outcome = calculateVoteOutcome(session.candidateSeats, command.votes, activeSeats(game).length);
+      const activePlayers = activeSeats(game).length;
+      if (command.votes.reduce<number>((sum, value) => sum + (value ?? 0), 0) !== activePlayers) {
+        throw new DomainError(`Проверьте голосование: сумма голосов должна быть равна числу живых игроков (${activePlayers})`, "INVALID_VOTE_TOTAL");
+      }
+      const outcome = calculateVoteOutcome(session.candidateSeats, command.votes, activePlayers);
       await tx.voteResult.createMany({
         data: session.candidateSeats.map((nomineeSeat) => ({ voteSessionId: session.id, nomineeSeat, votes: outcome.totals[nomineeSeat] })),
       });

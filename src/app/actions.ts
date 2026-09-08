@@ -88,7 +88,7 @@ export async function gameCommandAction(formData: FormData) {
       case "SAVE_PROTOCOL": command = { type: intent, speakerSeat: integer.min(1).max(10).parse(formData.get("speakerSeat")), marks: Array.from({ length: 10 }, (_, index) => { const seatNumber = index + 1; const value = String(formData.get(`mark-${seatNumber}`) ?? ""); return value ? { seatNumber, mark: z.enum(PROTOCOL_MARKS).parse(value) } : null; }).filter((entry): entry is { seatNumber: number; mark: (typeof PROTOCOL_MARKS)[number] } => entry !== null), note: boundedComment.parse(String(formData.get("note") ?? "")) || undefined, complete: formData.get("complete") === "true" }; break;
       case "ADD_FOUL": command = { type: intent, seatNumber: integer.min(1).max(10).parse(formData.get("seatNumber")) }; break;
       case "ADD_NOMINATION": command = { type: intent, nomineeSeat: integer.min(1).max(10).parse(formData.get("nomineeSeat")) }; break;
-      case "RECORD_VOTE": command = { type: intent, votes: formData.getAll("votes").map((value) => String(value).trim() === "" ? null : integer.min(0).max(10).parse(value)) }; break;
+      case "RECORD_VOTE": command = { type: intent, votes: formData.getAll("votes").map((value) => String(value).trim() === "" ? 0 : integer.min(0).max(10).parse(value)) }; break;
       case "RECORD_GROUP_EXIT": command = { type: intent, votesFor: integer.min(0).max(10).parse(formData.get("votesFor")) }; break;
       case "NIGHT_SHOT": { const target = String(formData.get("targetSeat") ?? ""); command = { type: intent, targetSeat: target === "" ? null : integer.min(1).max(10).parse(target) }; break; }
       case "DON_CHECK": case "SHERIFF_CHECK": command = { type: intent, targetSeat: integer.min(1).max(10).parse(formData.get("targetSeat")) }; break;
@@ -119,10 +119,11 @@ function scoringInputs(formData: FormData) {
 
 export async function gameScoringAction(formData: FormData) {
   const gameId = uuid.parse(formData.get("gameId"));
+  let intent: "SAVE" | "CLOSE" = "SAVE";
   try {
     const user = await requireUser();
     await requireGameAccess(user, gameId, { mutation: true });
-    const intent = z.enum(["SAVE", "CLOSE"]).parse(formData.get("intent"));
+    intent = z.enum(["SAVE", "CLOSE"]).parse(formData.get("intent"));
     const requestedApproval = formData.get("headJudgeApproved") === "on";
     if (requestedApproval && !canApproveHeadJudge(user)) throw new DomainError("Согласование может зафиксировать только Главный судья", "FORBIDDEN", 403);
     const inputs = scoringInputs(formData);
@@ -132,6 +133,7 @@ export async function gameScoringAction(formData: FormData) {
     else await saveGameScoring(gameId, inputs, requestedApproval, context);
   } catch (error) { redirectWithError(`/games/${gameId}`, error, "Не удалось сохранить scoring."); }
   revalidatePath(`/games/${gameId}`);
+  redirect(`/games/${gameId}${intent === "SAVE" ? "?saved=1" : ""}`);
 }
 
 export async function scoreOverrideAction(formData: FormData) {

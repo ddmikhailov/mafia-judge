@@ -207,6 +207,7 @@ details[open] > summary::after { content: "−"; }
 .game-context > div { display: grid; align-content: center; gap: 1px; }
 .game-context span, .game-context small { color: var(--muted); font-size: 11px; font-weight: 700; }
 .game-context strong { font-family: var(--display); font-size: 31px; line-height: 1; text-transform: uppercase; }
+.game-context strong.final-speech-title { max-width: 360px; font-size: 20px; line-height: 1.08; }
 .speaker { min-width: 108px; padding: 8px 12px; border: 1px solid rgba(125,39,96,.16); border-radius: 13px; background: #fff; text-align: right; }
 .speaker b { color: var(--accent); font-family: var(--display); font-size: 25px; line-height: 1; }
 .timer { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; margin-top: 8px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 14px; background: #fff; box-shadow: var(--shadow-soft); }
@@ -249,11 +250,20 @@ details[open] > summary::after { content: "−"; }
 .inline-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 10px; }
 .inline-form button { min-height: 46px; border-radius: 11px; }
 .nomination-list { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-dark); font-weight: 750; }
+.speech-restriction { margin-top: 10px; padding: 12px; border: 1px solid #d6a253; border-radius: 11px; background: var(--warning-soft); }
+.speech-restriction p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
 .vote-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .vote-grid label { display: grid; gap: 5px; font-weight: 850; }
+.crash-participants { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 12px; border-radius: 11px; background: var(--accent-soft); }
+.crash-participants span { color: var(--muted); font-size: 11px; font-weight: 750; }
+.crash-participants b { color: var(--accent-dark); }
 .triple-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
-.check-result { margin-top: 10px; padding: 11px; border-radius: 11px; background: var(--text); color: #fff; }
-.check-result summary { display: flex; align-items: center; min-height: 36px; cursor: pointer; }
+.night-history { margin-top: 12px; padding-block: 10px; background: var(--text); color: #fff; }
+.night-history summary { display: flex; align-items: center; min-height: 36px; cursor: pointer; font-weight: 850; }
+.night-history ol { display: grid; gap: 7px; margin: 8px 0 0; padding: 0; list-style: none; }
+.night-history li { display: grid; grid-template-columns: auto 1fr; gap: 10px; padding-top: 7px; border-top: 1px solid rgba(255,255,255,.16); }
+.night-history li span { color: rgba(255,255,255,.65); font-size: 11px; }
+.night-history li b { font-size: 12px; }
 .protocol-card { border-color: rgba(125,39,96,.48); box-shadow: 0 8px 24px rgba(125,39,96,.12); }
 .protocol-card > .muted { margin: 7px 0 10px; }
 .protocol-list { display: grid; gap: 5px; }
@@ -295,11 +305,12 @@ details[open] > summary::after { content: "−"; }
 .score-db select { min-height: 44px; }
 .approval { display: flex; align-items: center; gap: 10px; min-height: 48px; margin-top: 14px; font-weight: 750; }
 .approval input { width: 22px; min-height: 22px; height: 22px; accent-color: var(--accent); }
-.audit-list { display: grid; gap: 8px; padding-left: 20px; }
-.audit-list li { display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; padding: 8px; border-bottom: 1px solid var(--border); font-size: 12px; }
-.audit-list time { color: var(--muted); }
-.audit-list small, .audit-list details { grid-column: 1 / -1; }
-.audit-list pre { max-width: 100%; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.round-summary { margin-top: 16px; }
+.round-summary-scroll { overflow-x: auto; }
+.round-summary table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.round-summary th, .round-summary td { padding: 9px 7px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+.round-summary th { color: var(--muted); font-size: 10px; text-transform: uppercase; }
+.round-summary td:last-child { color: var(--accent-dark); font-variant-numeric: tabular-nums; }
 .user-list { margin-top: 16px; }
 .user-list article { display: grid; gap: 10px; margin: 0; }
 .user-list article > div { display: grid; }
@@ -336,6 +347,7 @@ details[open] > summary::after { content: "−"; }
   .archive-form .button { width: 100%; }
   .new-tournament > summary small { display: none; }
   .game-header { top: 67px; }
+  .game-context strong.final-speech-title { max-width: 190px; font-size: 16px; }
   .role-row { grid-template-columns: minmax(0, 1fr) 105px auto; gap: 6px; padding: 8px; }
   .role-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .role-row button { min-height: 44px; padding-inline: 10px; font-size: 11px; }

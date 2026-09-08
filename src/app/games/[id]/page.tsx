@@ -46,7 +46,7 @@ function TimerForGame({ game }: { game: NonNullable<Awaited<ReturnType<typeof ge
   if (game.subphase === "PROTOCOL") duration = 20;
   if (game.subphase === "SPEECH" && game.currentSpeakerSeat !== null) {
     const speaker = game.seats.find((seat) => seat.seatNumber === game.currentSpeakerSeat);
-    if (speaker?.speechRestrictionPending) duration = game.seats.filter((seat) => seat.status === "ACTIVE").length <= 4 ? 30 : 10;
+    if (speaker?.speechRestrictionPending) duration = null;
   }
   if (!duration) return null;
   const timerKey = `${game.id}:${game.subphase}:${game.dayNumber}:${game.nightNumber}:${game.currentSpeakerSeat ?? 0}`;
@@ -62,7 +62,14 @@ function formatSignedScore(value: { toString(): string } | string | number) {
   return `${numericValue > 0 ? "+" : ""}${formatScore(numericValue)}`;
 }
 
-async function ScoringScreen({ gameId, error, user }: { gameId: string; error?: string; user: Awaited<ReturnType<typeof requirePageUser>> }) {
+function nightActionText(action: { type: string; targetSeat: number | null; result: string }) {
+  if (action.type === "SHOT") return action.targetSeat === null ? "Отстрел — промах" : `Отстрел — место ${action.targetSeat}`;
+  const type = action.type === "DON_CHECK" ? "Проверка Дона" : "Проверка Шерифа";
+  const results: Record<string, string> = { IS_SHERIFF: "шериф", NOT_SHERIFF: "не шериф", RED: "красный", BLACK: "чёрный" };
+  return `${type} — место ${action.targetSeat}: ${results[action.result] ?? action.result}`;
+}
+
+async function ScoringScreen({ gameId, error, saved, user }: { gameId: string; error?: string; saved?: boolean; user: Awaited<ReturnType<typeof requirePageUser>> }) {
   const game = await getGameScoringSnapshot(gameId);
   if (!game?.winner) notFound();
   const locked = game.status === "COMPLETED";
@@ -75,28 +82,27 @@ async function ScoringScreen({ gameId, error, user }: { gameId: string; error?: 
     <h1>{locked ? "Баллы игры" : "Выставление баллов"}</h1>
     <p className="lead">Основной балл, ТЧ и штрафы рассчитаны автоматически. ДБ можно выставить со знаком плюс или минус.</p>
     {error ? <p className="error card">{error}</p> : null}
-    <form action={gameScoringAction}>
+    {saved && !locked ? <p className="success card" role="status">Баллы сохранены</p> : null}
+    {!locked ? <form action={gameScoringAction}>
       <input type="hidden" name="gameId" value={game.id} />
       <input type="hidden" name="actionToken" value={crypto.randomUUID()} />
       <div className="score-list">
         {game.seats.map((seat) => {
           const score = scoreBySeat.get(seat.id)!;
           const values = allowedJudgeAdditional(game.winner!, seat.team!);
-          return <article className="score-card" key={seat.id}>
+          return <article className="score-card" key={`${seat.id}:${score.judgeAdditionalPoints.toString()}`}>
             <input type="hidden" name="gameSeatId" value={seat.id} />
             <div className="score-player"><b>№{seat.seatNumber} {seat.player.nickname}</b><span>{roleLabels[seat.role!]} · {seat.team}</span></div>
             <dl><div><dt>Основной</dt><dd>{formatScore(score.basePoints)}</dd></div><div><dt>ТЧ</dt><dd>{formatScore(score.blackTriplePoints)}</dd></div><div><dt>Штраф</dt><dd>{formatScore(score.penaltyPoints)}</dd></div><div className="score-total"><dt>Итого</dt><dd>{formatScore(score.totalWithoutCompensation)}</dd></div></dl>
-            <label className="score-db">ДБ<select name="judgeAdditionalPoints" defaultValue={score.judgeAdditionalPoints.toString()} disabled={locked}>{values.map((value) => <option value={value} key={value}>{formatSignedScore(value)}</option>)}</select></label>
+            <label className="score-db">ДБ<select name="judgeAdditionalPoints" defaultValue={score.judgeAdditionalPoints.toString()}>{values.map((value) => <option value={value} key={value}>{formatSignedScore(value)}</option>)}</select></label>
           </article>;
         })}
       </div>
-      {!locked ? <>
-        {canApproveHeadJudge(user) ? <label className="approval"><input type="checkbox" name="headJudgeApproved" defaultChecked={approved} /> Согласовано с Главным судьёй</label> : null}
-        <div className="actions"><PendingSubmit className="button secondary" name="intent" value="SAVE">Сохранить</PendingSubmit><PendingSubmit name="intent" value="CLOSE">Закрыть игру</PendingSubmit></div>
-      </> : null}
-    </form>
+      {canApproveHeadJudge(user) ? <label className="approval"><input type="checkbox" name="headJudgeApproved" defaultChecked={approved} /> Согласовано с Главным судьёй</label> : null}
+      <div className="actions"><PendingSubmit className="button secondary" name="intent" value="SAVE">Сохранить</PendingSubmit><PendingSubmit name="intent" value="CLOSE">Закрыть игру</PendingSubmit></div>
+    </form> : <section className="card round-summary"><h2>Итоги тура</h2><div className="round-summary-scroll"><table><thead><tr><th>Место</th><th>Игрок</th><th>Роль</th><th>Баллы</th></tr></thead><tbody>{game.seats.map((seat) => { const score = scoreBySeat.get(seat.id)!; return <tr key={seat.id}><td>{seat.seatNumber}</td><td>{seat.player.nickname}</td><td>{roleLabels[seat.role!]}</td><td><b>{formatSignedScore(score.totalWithoutCompensation)}</b></td></tr>; })}</tbody></table></div></section>}
     {locked ? <>
-      <section className="card"><h2>Игра закрыта</h2><p className="muted">Обычное редактирование заблокировано. Следующий тур доступен на странице миникапа.</p><Link className="button" href={`/tournaments/${game.round.tournamentId}`}>К турам</Link></section>
+      <section className="card"><p className="muted">Игра закрыта, результаты сохранены. Следующий тур доступен на странице миникапа.</p><Link className="button" href={`/tournaments/${game.round.tournamentId}`}>К турам</Link></section>
       {canDangerousOverride(user) ? <details className="card tools"><summary>⋯ Ручная корректировка баллов</summary><form action={scoreOverrideAction} className="stack-form">
         <input type="hidden" name="gameId" value={game.id} />
         <input type="hidden" name="actionToken" value={crypto.randomUUID()} />
@@ -111,19 +117,21 @@ async function ScoringScreen({ gameId, error, user }: { gameId: string; error?: 
   </main>;
 }
 
-export default async function GamePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string }> }) {
+export default async function GamePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; saved?: string }> }) {
   const { id } = await params;
-  const { error } = await searchParams;
+  const { error, saved } = await searchParams;
   const user = await requirePageUser();
   await requireGameAccess(user, id);
   const game = await getGameSnapshot(id);
   if (!game) notFound();
-  if (game.phase === "SCORING" || game.status === "COMPLETED") return <ScoringScreen gameId={game.id} error={error} user={user} />;
+  if (game.phase === "SCORING" || game.status === "COMPLETED") return <ScoringScreen gameId={game.id} error={error} saved={saved === "1"} user={user} />;
   const active = game.seats.filter((seat) => seat.status === "ACTIVE");
   const current = game.seats.find((seat) => seat.seatNumber === game.currentSpeakerSeat);
   const protocolSpeaker = current ?? game.seats.find((seat) => game.pendingExitSeats.includes(seat.seatNumber)) ?? game.seats.find((seat) => seat.status === "ELIMINATED") ?? game.seats[0];
   const openVote = game.voteSessions.find((session) => session.status === "OPEN");
   const activeNominations = game.nominations.filter((item) => item.dayNumber === game.dayNumber && item.status === "ACTIVE");
+  const nightHistory = game.nightActions.filter((action) => !action.undoneAt).toReversed();
+  const crashSeats = game.phase === "CAR_CRASH" ? game.voteSessions.find((session) => session.status === "COMPLETED" && session.tieSeats.length > 0)?.tieSeats ?? [] : [];
   const protocolEvent = protocolSpeaker ? game.events.find((event) => event.type === "PROTOCOL_SAVED" && (event.payload as ProtocolPayload).speakerSeat === protocolSpeaker.seatNumber) : undefined;
   const protocolRecord = protocolEvent?.payload as ProtocolPayload | undefined;
   const protocolMarks = new Map((protocolRecord?.marks ?? []).map(({ seatNumber, mark }) => [seatNumber, mark]));
@@ -154,11 +162,12 @@ export default async function GamePage({ params, searchParams }: { params: Promi
   return <main className="page game-page">
     <header className="game-header">
       <div className="game-topline"><Link href={`/tournaments/${game.round.tournamentId}`}>← Турнир</Link><ConnectionStatus gameId={game.id} snapshot={snapshot} /></div>
-      <div className="game-context"><div><span>Тур {game.round.number}</span><strong>{game.phase === "DAY" ? `День ${game.dayNumber}` : game.phase === "NIGHT" ? `Ночь ${game.nightNumber}` : phaseLabels[game.phase]}</strong><small>{subphaseLabels[game.subphase] ?? game.subphase}</small></div>{current ? <div className="speaker"><span>Говорит</span><b>№{current.seatNumber}</b><small>{current.player.nickname}</small></div> : null}</div>
+      <div className="game-context"><div><span>Тур {game.round.number}</span><strong className={game.phase === "FINAL_SPEECH" ? "final-speech-title" : undefined}>{game.phase === "DAY" ? `День ${game.dayNumber}` : game.phase === "NIGHT" ? `Ночь ${game.nightNumber}` : phaseLabels[game.phase]}</strong><small>{subphaseLabels[game.subphase] ?? game.subphase}</small></div>{current ? <div className="speaker"><span>Говорит</span><b>№{current.seatNumber}</b><small>{current.player.nickname}</small></div> : null}</div>
       <TimerForGame game={game} />
     </header>
 
     {error ? <p className="error card">{error}</p> : null}
+    {nightHistory.length ? <details className="card night-history"><summary>Ночные действия · показать приватно</summary><ol>{nightHistory.map((action) => <li key={action.id}><span>Ночь {action.nightNumber}</span><b>{nightActionText(action)}</b></li>)}</ol></details> : null}
     {game.pendingWinner && game.phase === "RESULT_CONFIRMATION" ? <section className="winner-banner"><b>Система определила {winnerLabels[game.pendingWinner]}</b><div className="actions"><CommandForm gameId={game.id} intent="CONFIRM_WINNER"><button className="button" type="submit">Подтвердить</button></CommandForm>{canDangerousOverride(user) ? <CommandForm gameId={game.id} intent="CONTINUE_MANUALLY"><button className="button secondary" type="submit">Продолжить вручную</button></CommandForm> : null}</div></section> : null}
 
     {game.phase === "PROTOCOL" && protocolSpeaker ? <section className="card protocol-card"><h2>Протокол игрока №{protocolSpeaker.seatNumber}</h2><p className="muted">{protocolSpeaker.player.nickname}: отметьте озвученные роли и цвета.</p><CommandForm gameId={game.id} intent="SAVE_PROTOCOL" className="protocol-form" key={`${protocolSpeaker.id}:${protocolEvent?.id ?? "new"}`}>
@@ -184,27 +193,26 @@ export default async function GamePage({ params, searchParams }: { params: Promi
         {game.subphase === "AGREEMENT" || game.subphase === "FREE_SEATING" ? <CommandForm gameId={game.id} intent="ADVANCE_FIRST_NIGHT"><button className="button" type="submit">{game.subphase === "AGREEMENT" ? "Перейти к свободной посадке" : "Начать первый день"}</button></CommandForm> : null}
 
         {game.phase === "DAY" && current ? <>
-          <p>Текущий игрок: <b>№{current.seatNumber} {current.player.nickname}</b>{current.speechRestrictionPending ? " · ограниченная речь" : ""}</p>
-          <CommandForm gameId={game.id} intent="ADD_NOMINATION" className="inline-form"><select name="nomineeSeat" aria-label="Кандидатура">{active.map((seat) => <option key={seat.id} value={seat.seatNumber}>№{seat.seatNumber} {seat.player.nickname}</option>)}</select><button type="submit">Выставить</button></CommandForm>
-          {activeNominations.length ? <div className="nomination-list">Выставлены: {activeNominations.map((item) => `№${item.nomineeSeat}`).join(", ")}</div> : null}
+          <p>Текущий игрок: <b>№{current.seatNumber} {current.player.nickname}</b></p>
+          {current.speechRestrictionPending ? <div className="speech-restriction" role="status"><b>Игрок пропускает речь из-за трёх фолов</b><p>Таймер и выставление недоступны только на эту дневную фазу.</p></div> : <CommandForm gameId={game.id} intent="ADD_NOMINATION" className="inline-form"><select name="nomineeSeat" aria-label="Место кандидата">{active.map((seat) => <option key={seat.id} value={seat.seatNumber}>{seat.seatNumber}</option>)}</select><button type="submit">Выставить</button></CommandForm>}
+          {activeNominations.length ? <div className="nomination-list">Выставлены: {activeNominations.map((item) => item.nomineeSeat).join(", ")}</div> : null}
           <div className="actions">{activeNominations.length ? <CommandForm gameId={game.id} intent="UNDO_NOMINATION"><button className="button secondary" type="submit">Отменить выставление</button></CommandForm> : <span />}
-          <CommandForm gameId={game.id} intent="COMPLETE_SPEECH"><button className="button" type="submit">Завершить речь</button></CommandForm></div>
+          <CommandForm gameId={game.id} intent="COMPLETE_SPEECH"><button className="button" type="submit">{current.speechRestrictionPending ? "Речь пропущена" : "Завершить речь"}</button></CommandForm></div>
         </> : null}
 
         {game.phase === "VOTING" && ["PRIMARY", "REVOTE"].includes(game.subphase) && openVote ? <CommandForm gameId={game.id} intent="RECORD_VOTE">
-          <p className="muted">Последнее пустое поле получит остаток голосов.</p>
-          <div className="vote-grid">{openVote.candidateSeats.map((seat, index) => <label key={seat}>№{seat}<input name="votes" inputMode="numeric" type="number" min="0" max={active.length} required={index < openVote.candidateSeats.length - 1} placeholder={index === openVote.candidateSeats.length - 1 ? "остаток" : "0"} /></label>)}</div>
+          <p className="muted">Сумма голосов должна быть равна числу живых игроков: {active.length}.</p>
+          <div className="vote-grid">{openVote.candidateSeats.map((seat) => <label key={seat}>№{seat}<input name="votes" inputMode="numeric" type="number" min="0" max={active.length} required defaultValue={0} /></label>)}</div>
           <button className="button" type="submit">Зафиксировать голосование</button>
         </CommandForm> : null}
 
-        {game.phase === "CAR_CRASH" ? <><p>Речь участника автокатастрофы: <b>№{game.currentSpeakerSeat}</b></p><CommandForm gameId={game.id} intent="COMPLETE_CRASH_SPEECH"><button className="button" type="submit">Завершить речь</button></CommandForm></> : null}
+        {game.phase === "CAR_CRASH" ? <><div className="crash-participants"><span>Участники автокатастрофы</span><b>{crashSeats.map((seat) => `№${seat}`).join(", ")}</b></div><p>Сейчас говорит: <b>№{game.currentSpeakerSeat}</b></p><CommandForm gameId={game.id} intent="COMPLETE_CRASH_SPEECH"><button className="button" type="submit">Завершить речь</button></CommandForm></> : null}
 
         {game.subphase === "GROUP_EXIT" && openVote ? <CommandForm gameId={game.id} intent="RECORD_GROUP_EXIT"><p>Поднять игроков: {openVote.candidateSeats.map((seat) => `№${seat}`).join(", ")}</p><label className="field">Голосов за<input name="votesFor" type="number" inputMode="numeric" min="0" max={active.length} required /></label><button className="button" type="submit">Зафиксировать</button></CommandForm> : null}
 
         {game.subphase === "SHOOTING" ? <div className="actions"><CommandForm gameId={game.id} intent="NIGHT_SHOT" className="inline-form"><select name="targetSeat" aria-label="Цель отстрела">{game.seats.filter((seat) => seat.status === "ACTIVE" || seat.eliminationReason === "FOURTH_FOUL").map((seat) => <option key={seat.id} value={seat.seatNumber}>№{seat.seatNumber} {seat.player.nickname}{seat.status === "ELIMINATED" ? " · удалён" : ""}</option>)}</select><button type="submit">Убит</button></CommandForm><CommandForm gameId={game.id} intent="NIGHT_SHOT"><input type="hidden" name="targetSeat" value="" /><button className="button secondary" type="submit">Промах</button></CommandForm></div> : null}
 
-        {game.subphase === "DON_CHECK" || game.subphase === "SHERIFF_CHECK" ? <><CommandForm gameId={game.id} intent={game.subphase} className="inline-form"><select name="targetSeat" aria-label="Цель проверки">{game.seats.map((seat) => <option key={seat.id} value={seat.seatNumber}>№{seat.seatNumber} {seat.player.nickname}{seat.status === "ELIMINATED" ? " · выбыл" : ""}</option>)}</select><button type="submit">Проверить</button></CommandForm>{game.nightActions[0]?.type === game.subphase ? <details className="check-result"><summary>Показать результат</summary><strong>{game.nightActions[0].result}</strong></details> : null}</> : null}
-        {game.nightActions.find((action) => !action.undoneAt && ["DON_CHECK", "SHERIFF_CHECK"].includes(action.type)) ? <details className="check-result"><summary>Последняя проверка · показать приватно</summary><strong>{game.nightActions.find((action) => !action.undoneAt && ["DON_CHECK", "SHERIFF_CHECK"].includes(action.type))?.result}</strong></details> : null}
+        {game.subphase === "DON_CHECK" || game.subphase === "SHERIFF_CHECK" ? <CommandForm gameId={game.id} intent={game.subphase} className="inline-form"><select name="targetSeat" aria-label="Цель проверки">{game.seats.map((seat) => <option key={seat.id} value={seat.seatNumber}>№{seat.seatNumber} {seat.player.nickname}{seat.status === "ELIMINATED" ? " · выбыл" : ""}</option>)}</select><button type="submit">Проверить</button></CommandForm> : null}
 
         {game.subphase === "BLACK_TRIPLE" ? <><CommandForm gameId={game.id} intent="BLACK_TRIPLE"><div className="triple-grid">{[0, 1, 2].map((index) => <select name="selectedSeats" aria-label={`ТЧ место ${index + 1}`} key={index}>{game.seats.map((seat) => <option key={seat.id} value={seat.seatNumber}>№{seat.seatNumber}</option>)}</select>)}</div><button className="button" type="submit">Подтвердить ТЧ</button></CommandForm><CommandForm gameId={game.id} intent="SKIP_BLACK_TRIPLE"><button className="button secondary" type="submit">Без ТЧ</button></CommandForm></> : null}
 
@@ -234,7 +242,6 @@ export default async function GamePage({ params, searchParams }: { params: Promi
       <h3>Штраф</h3><CommandForm gameId={game.id} intent="ADD_PENALTY" className="stack-form"><select name="seatNumber">{game.seats.map((seat) => <option key={seat.id} value={seat.seatNumber}>№{seat.seatNumber} {seat.player.nickname}</option>)}</select><select name="value">{[-0.2, -0.4, -0.5, -0.7, -1.2, -1.6].map((value) => <option key={value} value={value}>{value}</option>)}</select><input name="comment" placeholder="Комментарий (необязательно)" /><button type="submit">Добавить штраф</button></CommandForm>
       {game.penalties.some((penalty) => !penalty.undoneAt) ? <CommandForm gameId={game.id} intent="UNDO_PENALTY"><button className="undo-button" type="submit">Отменить штраф</button></CommandForm> : null}
       {canDangerousOverride(user) ? <><h3>Ручная корректировка</h3><CommandForm gameId={game.id} intent="MANUAL_OVERRIDE" className="stack-form"><select name="kind" aria-label="Тип корректировки"><option value="FOUL">Число фолов</option><option value="ROLE">Роль</option><option value="STATUS">Выбыл / восстановить</option><option value="PHASE">Этап и подэтап игры</option><option value="WINNER">Победитель / ничья</option><option value="CANCEL_VOTE">Отменить голосование</option><option value="PENALTY">Произвольный штраф</option></select><select name="seatNumber" aria-label="Игрок"><option value="">Без игрока</option>{game.seats.map((seat) => <option key={seat.id} value={seat.seatNumber}>№{seat.seatNumber} {seat.player.nickname}</option>)}</select><input name="value" placeholder="Новое значение" /><input name="extra" maxLength={500} placeholder="Подэтап или комментарий" /><input name="reason" maxLength={500} placeholder="Причина (обязательно)" required /><button type="submit">Применить корректировку</button></CommandForm></> : null}
-      <h3>История действий</h3><ol className="audit-list">{game.events.slice(0, 20).map((event) => <li key={event.id}><b>{event.type}</b><time>{event.createdAt.toLocaleTimeString("ru-RU")}</time>{event.overrideReason ? <small>{event.overrideReason}</small> : null}</li>)}</ol>
     </details>
   </main>;
 }
